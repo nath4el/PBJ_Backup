@@ -105,7 +105,7 @@
   <main class="dash-main">
     <header class="dash-header">
       {{-- ✅ semi-bold hanya judul page --}}
-      <h1>Dashboard Admin Unit</h1>
+      <h1>Dashboard PIC Unit</h1>
       <p>Kelola arsip pengadaan barang dan jasa {{ $unitName }}</p>
     </header>
 
