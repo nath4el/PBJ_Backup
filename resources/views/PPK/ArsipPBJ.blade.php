@@ -186,7 +186,7 @@
     <header class="dash-header ap-header">
       <div class="ap-header-left">
         <h1>Arsip PBJ</h1>
-        <p>Kelola arsip pengadaan barang dan jasa {{ $unitName }}</p>
+        <p>Kelola arsip pengadaan barang dan jasa Universitas Jenderal Soedirman</p>
       </div>
 
       {{-- ✅ NEW: Tombol Cetak Arsip (kanan atas) --}}
