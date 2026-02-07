@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 {{-- resources/views/PPK/Dashboard.blade.php --}}
 <!DOCTYPE html>
 <html lang="id">
@@ -89,6 +90,60 @@
         <i class="bi bi-house-door"></i> Kembali
       </a>
       <a class="dash-side-btn" href="{{ url('/logout') }}">
+=======
+@extends('layouts.ppk')
+
+@section('title', 'Dashboard PPK')
+
+@php
+$unitKerja = [
+  'Fakultas Pertanian','Fakultas Biologi','Fakultas Ekonomi dan Bisnis','Fakultas Peternakan',
+  'Fakultas Hukum','Fakultas Ilmu Sosial dan Ilmu Politik','Fakultas Kedokteran','Fakultas Teknik',
+  'Fakultas Ilmu-Ilmu Kesehatan','Fakultas Ilmu Budaya','Fakultas Matematika dan Ilmu Pengetahuan Alam',
+  'Fakultas Perikanan dan Ilmu Kelautan','Pascasarjana',
+  'Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)',
+  'Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)',
+  'Biro Akademik dan Kemahasiswaan','Biro Perencanaan, Kerjasama, dan Hubungan Masyarakat',
+  'Biro Keuangan dan Umum','Badan Pengelola Usaha','Rumah Sakit Gigi dan Mulut (RSGMP)',
+  'Satuan Pengawasan Internal','UPA Perpustakaan','UPA Bahasa','UPA Layanan Laboratorium Terpadu',
+  'UPA Layanan Uji Kompetensi','UPA Pengembangan Karir dan Kewirausahaan','UPA Teknologi Informasi dan Komunikasi'
+];
+@endphp
+
+@section('content')
+<div class="dash">
+
+  {{-- SIDEBAR --}}
+  <aside class="dash-side">
+    <div class="dash-brand">
+      <div class="dash-logo">
+        <img src="{{ asset('Logo_Unsoed.png') }}" alt="Logo Unsoed">
+      </div>
+      <div>
+        <div class="dash-app">SIAPABAJA</div>
+        <div class="dash-role">Admin (PPK)</div>
+      </div>
+    </div>
+
+    <nav class="dash-menu">
+      <a href="#" class="dash-link active">
+        <i class="bi bi-grid"></i> Dashboard
+      </a>
+      <a href="#" class="dash-link">
+        <i class="bi bi-archive"></i> Arsip PBJ
+      </a>
+      <a href="#" class="dash-link">
+        <i class="bi bi-plus-circle"></i> Tambah Pengadaan
+      </a>
+    </nav>
+
+    {{-- MENU BAWAH (persis kaya gambar) --}}
+    <div class="dash-side-bottom">
+      <a href="{{ url('/') }}" class="dash-link">
+        <i class="bi bi-house"></i> Kembali
+      </a>
+      <a href="{{ url('/logout') }}" class="dash-link">
+>>>>>>> Stashed changes
         <i class="bi bi-box-arrow-right"></i> Keluar
       </a>
     </div>
@@ -96,6 +151,7 @@
 
   {{-- MAIN --}}
   <main class="dash-main">
+<<<<<<< Updated upstream
     <header class="dash-header">
       {{-- ✅ semi-bold hanya judul page --}}
       <h1>Dashboard Admin PPK</h1>
@@ -192,11 +248,160 @@
               </select>
               <i class="bi bi-chevron-down"></i>
             </div>
+=======
+
+    <div class="dash-header">
+      <h1>Dashboard Admin (PPK)</h1>
+      <p>Kelola seluruh arsip pengadaan dari semua unit kerja</p>
+    </div>
+
+    {{-- KPI --}}
+    <section class="dash-cards">
+      <div class="kpi kpi-blue">
+        <div>
+          <div class="kpi-label">Total Arsip</div>
+          <div class="kpi-value">7</div>
+        </div>
+        <div class="kpi-ic"><i class="bi bi-file-earmark-text"></i></div>
+      </div>
+
+      <div class="kpi kpi-green">
+        <div>
+          <div class="kpi-label">Arsip Publik</div>
+          <div class="kpi-value">5</div>
+        </div>
+        <div class="kpi-ic"><i class="bi bi-eye"></i></div>
+      </div>
+
+      <div class="kpi kpi-dark">
+        <div>
+          <div class="kpi-label">Arsip Private</div>
+          <div class="kpi-value">2</div>
+        </div>
+        <div class="kpi-ic"><i class="bi bi-eye-slash"></i></div>
+      </div>
+
+      <div class="kpi kpi-yellow">
+        <div>
+          <div class="kpi-label">Total Unit Kerja</div>
+          <div class="kpi-value">{{ count($unitKerja) }}</div>
+        </div>
+        <div class="kpi-ic"><i class="bi bi-buildings"></i></div>
+      </div>
+    </section>
+
+    {{-- PANEL (kiri kecil, kanan lebih lebar) --}}
+    <section class="dash-row">
+      <div class="panel panel-pack">
+        <div class="panel-top">
+          <div>
+            <div class="panel-label">Total Paket Pengadaan</div>
+            <div class="panel-value">7</div>
+            <div class="panel-sub">Paket Pengadaan Barang dan Jasa</div>
+          </div>
+
+          <div class="panel-ic"><i class="bi bi-file-earmark-text"></i></div>
+        </div>
+
+        <div class="panel-filters panel-filters-bottom">
+          <select class="sel">
+            <option>Tahun</option>
+            <option>2024</option>
+            <option>2025</option>
+            <option>2026</option>
+          </select>
+          <select class="sel">
+            <option value="">Semua Unit</option>
+            @foreach($unitKerja as $unit)
+              <option>{{ $unit }}</option>
+            @endforeach
+          </select>
+        </div>
+      </div>
+
+      <div class="panel panel-wide">
+        <div class="panel-top">
+          <div>
+            <div class="panel-label">Total Nilai Pengadaan</div>
+            <div class="panel-money">Rp 1.200.000.000</div>
+            <div class="panel-sub">Nilai Kontrak Pengadaan</div>
+          </div>
+
+          <div class="panel-ic"><i class="bi bi-bank"></i></div>
+        </div>
+      </div>
+    </section>
+
+    {{-- CHART --}}
+    <section class="dash-charts">
+      {{-- DONUT --}}
+      <div class="chart-card">
+        <div class="chart-head">Statistika</div>
+
+        <div class="chart-filters">
+          <select class="sel" id="ppkYearDonut">
+            <option>Tahun</option>
+            <option>2024</option>
+            <option>2025</option>
+            <option selected>2026</option>
+          </select>
+
+          <select class="sel" id="ppkUnitDonut">
+            <option value="">Semua Unit</option>
+            @foreach($unitKerja as $unit)
+              <option>{{ $unit }}</option>
+            @endforeach
+          </select>
+        </div>
+
+        <div class="chart-body">
+          <div class="chart-canvas">
+            <canvas id="ppkDonut"></canvas>
+          </div>
+
+          <div class="chart-legend">
+            <div class="lg"><span class="dot d-blue"></span> Perencanaan</div>
+            <div class="lg"><span class="dot d-dark"></span> Pemilihan</div>
+            <div class="lg"><span class="dot d-yellow"></span> Pelaksanaan</div>
+            <div class="lg"><span class="dot d-sand"></span> Selesai</div>
+          </div>
+        </div>
+      </div>
+
+      {{-- BAR --}}
+      <div class="chart-card">
+        <div class="chart-head">Statistika</div>
+
+        <div class="chart-filters">
+          <select class="sel" id="ppkYearBar">
+            <option>Tahun</option>
+            <option selected>2020</option>
+            <option>2021</option>
+            <option>2022</option>
+            <option>2023</option>
+            <option>2024</option>
+            <option>2025</option>
+            <option>2026</option>
+          </select>
+
+          <select class="sel" id="ppkUnitBar">
+            <option value="">Semua Unit</option>
+            @foreach($unitKerja as $unit)
+              <option>{{ $unit }}</option>
+            @endforeach
+          </select>
+        </div>
+
+        <div class="chart-body bar-only">
+          <div class="chart-canvas chart-canvas--bar">
+            <canvas id="ppkBar"></canvas>
+>>>>>>> Stashed changes
           </div>
         </div>
       </div>
     </section>
 
+<<<<<<< Updated upstream
     {{-- STATISTIKA (2 card chart) --}}
     <section class="u-charts">
       {{-- Chart 1: Donut --}}
@@ -648,3 +853,101 @@
 
 </body>
 </html>
+=======
+  </main>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // pastikan Chart.js kebaca
+  if (typeof Chart === 'undefined') {
+    console.error('Chart.js belum ke-load. Pastikan di layouts/ppk.blade.php ada <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> sebelum @stack("scripts")');
+    return;
+  }
+
+  const donutEl = document.getElementById('ppkDonut');
+  const barEl   = document.getElementById('ppkBar');
+
+  if (!donutEl || !barEl) {
+    console.error('Canvas ppkDonut / ppkBar tidak ditemukan');
+    return;
+  }
+
+  const labels = ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'];
+  const colors = ['#1f4e63', '#111827', '#f6c100', '#e3bd74'];
+
+  // DONUT
+  const donutChart = new Chart(donutEl, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: [25, 15, 40, 20],
+        backgroundColor: colors,
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // BAR
+  const barChart = new Chart(barEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '2020',
+        data: [30, 50, 90, 35],
+        backgroundColor: colors,
+        borderRadius: 8,
+        barPercentage: .6,
+        categoryPercentage: .7
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom' }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 20 } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // interaksi dropdown (dummy)
+  function rand4(){
+    return [
+      Math.floor(Math.random()*100)+1,
+      Math.floor(Math.random()*100)+1,
+      Math.floor(Math.random()*100)+1,
+      Math.floor(Math.random()*100)+1
+    ];
+  }
+
+  function refresh(){
+    donutChart.data.datasets[0].data = rand4();
+    donutChart.update();
+
+    barChart.data.datasets[0].data = rand4();
+    barChart.data.datasets[0].label = document.getElementById('ppkYearBar')?.value || '2020';
+    barChart.update();
+  }
+
+  ['ppkYearDonut','ppkUnitDonut','ppkYearBar','ppkUnitBar'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', refresh);
+  });
+});
+</script>
+@endpush
+>>>>>>> Stashed changes
