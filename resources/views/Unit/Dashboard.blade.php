@@ -22,8 +22,7 @@
 
 <body class="dash-body">
 @php
-  // dummy frontend (nanti backend tinggal ganti)
-  $unitName = "Fakultas Teknik";
+  
 
   // TOP SUMMARY (sesuai gambar)
   $summary = [
@@ -92,12 +91,18 @@
 
     {{-- Footer buttons (DISAMAKAN DENGAN ARSIP PBJ) --}}
     <div class="dash-side-actions">
-      <a class="dash-side-btn" href="{{ url('/unit/dashboard') }}">
-        <i class="bi bi-house-door"></i> Kembali
-      </a>
-      <a class="dash-side-btn" href="{{ url('/logout') }}">
-        <i class="bi bi-box-arrow-right"></i> Keluar
-      </a>
+      <a class="dash-side-btn" href="{{ url('/') }}#unit">
+    <i class="bi bi-house-door"></i>
+    Kembali
+</a>
+      <form method="POST" action="{{ route('logout') }}" style="display: inline; margin: 0; padding: 0;">
+    @csrf
+
+    <a class="dash-side-btn" href="#" onclick="event.preventDefault(); this.closest('form').submit();">
+        <i class="bi bi-box-arrow-right"></i>
+        Keluar
+    </a>
+</form>
     </div>
   </aside>
 

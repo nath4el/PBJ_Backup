@@ -36,15 +36,26 @@ Route::middleware('guest')->group(function () {
         $remember = $request->boolean('remember'); // checkbox "ingat kata sandi" (kalau ada)
 
         if (Auth::attempt([
-            'email' => $request->email,
-            'password' => $request->password,
-        ], $remember)) {
+    'email' => $request->email,
+    'password' => $request->password,
+], $remember)) {
 
-            $request->session()->regenerate();
+    $request->session()->regenerate();
 
-            // masuk lewat gerbang smart redirect
-            return redirect()->intended(route('home'));
-        }
+    $user = Auth::user();
+
+    if ($user->role === 'ppk') {
+        return redirect('/#ppk');
+    }
+
+    if ($user->role === 'unit') {
+        return redirect('/#unit');
+    }
+
+    // fallback jika role tidak dikenali atau null
+    Auth::logout();
+    return redirect()->route('login')->with('error', 'Role tidak dikenali atau belum ditetapkan.');
+}
 
         // kalau gagal login, balik ke form + param error (biar UI kamu tetap sama)
         return redirect()

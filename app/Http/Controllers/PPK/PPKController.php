@@ -10,7 +10,7 @@ class PpkController extends Controller
 {
     public function dashboard()
     {
-        $ppkName = "PPK Utama"; // opsional kalau dibutuhkan blade
+        $ppkName = auth()->user()->name ?? 'Unit Kerja'; // opsional kalau dibutuhkan blade
 
         return view('PPK.Dashboard', compact('ppkName'));
     }

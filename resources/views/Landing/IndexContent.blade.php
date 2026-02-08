@@ -493,6 +493,28 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeDetailModal();
   });
+ // Toggle Dropdown Profile setelah login (versi lebih aman)
+document.addEventListener('DOMContentLoaded', function () {
+    const profileBtn = document.querySelector('.nav-user-btn');
+    const profileMenu = document.querySelector('.nav-user-menu');
 
+    if (profileBtn && profileMenu) {
+        profileBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Toggle tampilkan/sembunyikan menu
+            const isVisible = profileMenu.style.display === 'block';
+            profileMenu.style.display = isVisible ? 'none' : 'block';
+        });
+
+        // Tutup dropdown jika klik di luar area profile
+        document.addEventListener('click', function (e) {
+            if (!profileBtn.contains(e.target) && !profileMenu.contains(e.target)) {
+                profileMenu.style.display = 'none';
+            }
+        });
+    }
+});
 </script>
 @endpush

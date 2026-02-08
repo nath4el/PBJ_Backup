@@ -12,14 +12,14 @@ class UnitController extends Controller
     public function dashboard()
     {
         // Kalau blade dashboard butuh nama unit, siapkan aja:
-        $unitName = "Fakultas Teknik";
+        $unitName = auth()->user()->name ?? 'Unit Kerja';
 
         return view('Unit.Dashboard', compact('unitName'));
     }
 
     public function arsipIndex(Request $request)
     {
-        $unitName = "Fakultas Teknik";
+        $unitName = auth()->user()->name;
 
         // Dummy data tabel arsip (silakan sesuaikan kalau blade kamu butuh field tertentu)
         // NOTE: field ini sengaja pakai schema yang nyambung ke blade kamu
