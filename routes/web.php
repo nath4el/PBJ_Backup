@@ -105,5 +105,10 @@ Route::middleware('auth')->group(function () {
             Route::put('/arsip/{id}', [PpkController::class, 'arsipUpdate'])->name('arsip.update');
             Route::get('/pengadaan/tambah', [PpkController::class, 'pengadaanCreate'])->name('pengadaan.create');
             Route::post('/pengadaan/store', [PpkController::class, 'pengadaanStore'])->name('pengadaan.store');
+            // ✅ KELOLA AKUN (PPK)
+            Route::get('/kelola-akun', [PpkController::class, 'kelolaAkun'])->name('kelola.akun');
+
+            // ✅ SIMPAN PERUBAHAN AKUN (PPK)
+            Route::put('/akun', [PpkController::class, 'updateAkun'])->name('akun.update');
         });
 });

@@ -65,6 +65,11 @@
         <span class="ic"><i class="bi bi-plus-square"></i></span>
         Tambah Pengadaan
       </a>
+
+       <a class="dash-link" href="{{ route('unit.kelola.akun') }}">
+    <span class="ic"><i class="bi bi-person-gear"></i></span>
+    Kelola Akun
+  </a>
     </nav>
 
     <div class="dash-side-actions">

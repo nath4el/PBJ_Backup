@@ -185,22 +185,24 @@
         <span class="ic"><i class="bi bi-plus-square"></i></span>
         Tambah Pengadaan
       </a>
+
+      <a class="dash-link {{ request()->routeIs('ppk.kelola.akun') ? 'active' : '' }}" href="{{ route('ppk.kelola.akun') }}">
+  <span class="ic"><i class="bi bi-person-gear"></i></span>
+  Kelola Akun
+</a>
+
     </nav>
 
     <div class="dash-side-actions">
-      <a class="dash-side-btn" href="{{ url('/') }}#unit">
-    <i class="bi bi-house-door"></i>
-    Kembali
-</a>
+      <a class="dash-side-btn" href="{{ url('/ppk/dashboard') }}">
+        <i class="bi bi-house-door"></i>
+        Kembali
+      </a>
 
-      <form method="POST" action="{{ route('logout') }}" style="display: inline; margin: 0; padding: 0;">
-    @csrf
-
-    <a class="dash-side-btn" href="#" onclick="event.preventDefault(); this.closest('form').submit();">
+      <a class="dash-side-btn" href="{{ url('/logout') }}">
         <i class="bi bi-box-arrow-right"></i>
         Keluar
-    </a>
-</form>
+      </a>
     </div>
   </aside>
 

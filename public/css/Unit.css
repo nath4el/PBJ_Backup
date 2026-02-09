@@ -1446,3 +1446,16 @@ section.tp-cardbox .tp-help{
 .tp-form .tp-upload-label{
   color: var(--unsoed-blue) !important;
 }
+
+/* Paksa biru Unsoed untuk judul catatan dokumen */
+.dt-doc-note-note .dt-doc-note-title,
+#dtDocNoteWrap .dt-doc-note-title,
+body .dt-doc-note-title{
+  color: #174A50 !important;
+}
+
+#dtDocNoteWrap .dt-doc-note-title,
+#dtDocNoteWrap .bi-info-circle {
+    color: #1F5C63 !important;
+}
+

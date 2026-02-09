@@ -1,3 +1,5 @@
+{{-- resources/views/Home/IndexContent.blade.php --}}
+
 {{-- HERO --}}
 <section id="Dashboard" class="hero">
   <div class="container">
@@ -24,6 +26,7 @@
           class="hero-img"
         >
       </div>
+    </div>
   </div>
 </section>
 
@@ -61,127 +64,133 @@
     </div>
 
     <div class="more">
-  <a href="{{ route('home.pbj') }}">
-    Lihat Selengkapnya <span style="font-size:18px">›</span>
-  </a>
-</div>
-
-
-
-
+      <a href="{{ route('home.pbj') }}">
+        Lihat Selengkapnya <span style="font-size:18px">›</span>
+      </a>
+    </div>
   </div>
 </section>
 
-{{-- MODAL DETAIL (PERSIS) + SCROLL KHUSUS DOKUMEN --}}
-<div id="detailModal" class="detail-overlay" onclick="closeDetailModal()">
-  <div class="detail-modal" onclick="event.stopPropagation()">
+{{-- MODAL DETAIL (PAKAI SISTEM pbj-modal-*) --}}
+<div id="detailModal" class="pbj-modal-overlay" onclick="closeDetailModal()">
+  <div class="pbj-modal" onclick="event.stopPropagation()">
 
-    <div class="detail-head">
-      <div class="detail-title">
+    <div class="pbj-modal-head">
+      <h3 class="pbj-modal-title">
         Penyediaan Jasa Keamanan (SATPAM) Universitas Jenderal Soedirman
-      </div>
-      <button type="button" class="detail-x" onclick="closeDetailModal()">&times;</button>
+      </h3>
+
+      <button type="button" class="pbj-modal-close" onclick="closeDetailModal()">&times;</button>
     </div>
 
-    <div class="detail-body">
-      <div class="detail-sep"></div>
+    <div class="pbj-modal-body">
 
-      {{-- 6 kotak info --}}
-      <div class="detail-grid">
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-envelope"></i></div>
-          <div><div class="dk">Unit Kerja</div><div class="dv">Fakultas Teknik</div></div>
+      <div class="pbj-info-grid">
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-envelope"></i></div>
+          <div>
+            <div class="pbj-info-k">Unit Kerja</div>
+            <div class="pbj-info-v">Fakultas Teknik</div>
+          </div>
         </div>
 
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-calendar3"></i></div>
-          <div><div class="dk">Tahun Anggaran</div><div class="dv">2026</div></div>
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-calendar3"></i></div>
+          <div>
+            <div class="pbj-info-k">Tahun Anggaran</div>
+            <div class="pbj-info-v">2026</div>
+          </div>
         </div>
 
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-credit-card-2-front"></i></div>
-          <div><div class="dk">ID RUP</div><div class="dv">RUP-2-26-001-FT</div></div>
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-credit-card-2-front"></i></div>
+          <div>
+            <div class="pbj-info-k">ID RUP</div>
+            <div class="pbj-info-v">RUP-2-26-001-FT</div>
+          </div>
         </div>
 
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-bookmark-check"></i></div>
-          <div><div class="dk">Status Pekerjaan</div><div class="dv">Selesai</div></div>
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-bookmark-check"></i></div>
+          <div>
+            <div class="pbj-info-k">Status Pekerjaan</div>
+            <div class="pbj-info-v">Selesai</div>
+          </div>
         </div>
 
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-person"></i></div>
-          <div><div class="dk">Nama Rekanan</div><div class="dv">PT Teknologi Maju Bersama</div></div>
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-person"></i></div>
+          <div>
+            <div class="pbj-info-k">Nama Rekanan</div>
+            <div class="pbj-info-v">PT Teknologi Maju Bersama</div>
+          </div>
         </div>
 
-        <div class="ditem">
-          <div class="dic"><i class="bi bi-folder2"></i></div>
-          <div><div class="dk">Jenis Pengadaan</div><div class="dv">Tender</div></div>
+        <div class="pbj-info-card">
+          <div class="pbj-info-ic"><i class="bi bi-folder2"></i></div>
+          <div>
+            <div class="pbj-info-k">Jenis Pengadaan</div>
+            <div class="pbj-info-v">Tender</div>
+          </div>
         </div>
       </div>
 
-      <div class="detail-sep"></div>
+      <div class="pbj-divider"></div>
 
-      <div class="detail-subtitle">Informasi Anggaran</div>
-      <div class="budget-grid">
-        <div class="bitem"><div class="bk">Pagu Anggaran</div><div class="bv">Rp 500.000.000</div></div>
-        <div class="bitem"><div class="bk">HPS</div><div class="bv">Rp 480.000.000</div></div>
-        <div class="bitem"><div class="bk">Nilai Kontrak</div><div class="bv">Rp 475.000.000</div></div>
+      <div class="pbj-section-title">Informasi Anggaran</div>
+      <div class="pbj-budget-grid">
+        <div class="pbj-budget-card">
+          <div class="pbj-budget-k">Pagu Anggaran</div>
+          <div class="pbj-budget-v">Rp 500.000.000</div>
+        </div>
+        <div class="pbj-budget-card">
+          <div class="pbj-budget-k">HPS</div>
+          <div class="pbj-budget-v">Rp 480.000.000</div>
+        </div>
+        <div class="pbj-budget-card">
+          <div class="pbj-budget-k">Nilai Kontrak</div>
+          <div class="pbj-budget-v">Rp 475.000.000</div>
+        </div>
       </div>
 
-      <div class="detail-sep"></div>
+      <div class="pbj-divider"></div>
 
-      <div class="detail-subtitle">Dokumen Pengadaan</div>
+      <div class="pbj-section-title">Dokumen Pengadaan</div>
 
       @php
-        $docs = array_fill(0, 12, ['nama' => 'Dokumen RUP', 'url' => '#']);
+        $docs = array_fill(0, 12, ['nama' => 'Dokumen RUP', 'url' => asset('dokumen/sample.pdf')]);
       @endphp
 
-      <div class="docs-scroll">
-        <div class="docs-grid">
-          @foreach($docs as $doc)
-            <div class="doc-row">
-              <div class="doc-left">
-                <span class="doc-ic"><i class="bi bi-file-earmark"></i></span>
-                <span class="doc-name">{{ $doc['nama'] }}</span>
-              </div>
-
-              <a 
-                  href="{{ asset('dokumen/sample.pdf') }}" 
-                  target="_blank"
-                  class="doc-btn doc-view"
-                >
-                <i class="bi bi-eye"></i> Lihat
-              </a>
+      <div class="pbj-docs-grid">
+        @foreach($docs as $doc)
+          <div class="pbj-doc-card">
+            <div class="pbj-doc-left">
+              <span class="pbj-doc-ic"><i class="bi bi-file-earmark"></i></span>
+              <span class="pbj-doc-name">{{ $doc['nama'] }}</span>
             </div>
-          @endforeach
-        </div>
+
+            <a href="{{ $doc['url'] }}" target="_blank" class="pbj-doc-btn">
+              <i class="bi bi-eye"></i> Lihat Dokumen
+            </a>
+          </div>
+        @endforeach
       </div>
 
     </div>
   </div>
 </div>
 
-{{-- STATISTIKA --}}
+
+{{-- STATISTIKA (SAMA PERSIS LANDING) --}}
 <section class="stats-wrap" id="statistika">
   <div class="container">
     <div class="section-title">
-      <h2>Statistika</h2>
+      <h2>Statistik</h2>
     </div>
 
     <div class="stats-2col">
-
-      {{-- KIRI : STATUS ARSIP --}}
-      @include('Partials.statistika-donut', [
-        'title' => 'Status Arsip',
-        'donutId' => 'landingDonut'
-      ])
-
-      {{-- KANAN : METODE PENGADAAN --}}
-      @include('Partials.statistika-bar', [
-        'title' => 'Metode Pengadaan',
-        'barId' => 'landingBar'
-      ])
-
+      @include('Partials.statistika-donut', ['title' => 'Status Arsip', 'donutId' => 'landingDonut'])
+      @include('Partials.statistika-bar',   ['title' => 'Metode Pengadaan', 'barId' => 'landingBar'])
     </div>
   </div>
 </section>
@@ -213,15 +222,9 @@
 
   <div class="reg-card">
     @foreach($regulasi as $item)
-      <a href="{{ asset('regulasi/'.$item['file']) }}"
-         target="_blank"
-         class="reg-item">
-        <div class="reg-icon">
-          <i class="bi bi-file-earmark-text"></i>
-        </div>
-        <div class="reg-text">
-          {{ $item['judul'] }}
-        </div>
+      <a href="{{ asset('regulasi/'.$item['file']) }}" target="_blank" class="reg-item">
+        <div class="reg-icon"><i class="bi bi-file-earmark-text"></i></div>
+        <div class="reg-text">{{ $item['judul'] }}</div>
       </a>
     @endforeach
   </div>
@@ -229,206 +232,195 @@
 
 @push('scripts')
 <script>
-  // ======================
-  // MODAL
-  // ======================
-  function openDetailModal() {
-    const modal = document.getElementById('detailModal');
-    if (!modal) return;
+/* ======================
+   MODAL
+====================== */
+function openDetailModal(){
+  const modal = document.getElementById('detailModal');
+  if(!modal) return;
+  modal.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeDetailModal(){
+  const modal = document.getElementById('detailModal');
+  if(!modal) return;
+  modal.classList.remove('show');
+  document.body.style.overflow = '';
+}
+window.openDetailModal = openDetailModal;
+window.closeDetailModal = closeDetailModal;
 
-    modal.classList.add('show');
-    document.body.style.overflow = 'hidden';
-  }
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') closeDetailModal();
+});
 
-  function closeDetailModal() {
-    const modal = document.getElementById('detailModal');
-    if (!modal) return;
+/* =========================
+   DATA DUMMY
+========================= */
+const donutData = {
+  "2020": { "all": [28, 17, 22, 33], "Fakultas Pertanian": [10, 10, 30, 50] },
+  "2021": { "all": [20, 25, 15, 40], "Fakultas Pertanian": [12, 18, 30, 40] }
+};
 
-    modal.classList.remove('show');
-    document.body.style.overflow = '';
-  }
+const barData = {
+  "2020": { "all": [35, 90, 65, 50, 75, 25], "Fakultas Pertanian": [10, 40, 20, 15, 25, 8] },
+  "2021": { "all": [20, 70, 55, 40, 60, 18], "Fakultas Pertanian": [12, 35, 25, 10, 22, 6] }
+};
 
-  window.openDetailModal = openDetailModal;
-  window.closeDetailModal = closeDetailModal;
+const BAR_LABELS = [
+  ["Pengadaan","Langsung"],
+  ["Penunjukan","Langsung"],
+  ["E-Purchasing/","E-Catalog"],
+  ["Tender","Terbatas"],
+  ["Tender","Terbuka"],
+  ["Swakelola"]
+];
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeDetailModal();
+function pickData(obj, year, unit, fallbackLen){
+  if(obj?.[year]?.[unit]) return obj[year][unit];
+  if(obj?.[year]?.all) return obj[year].all;
+  return new Array(fallbackLen).fill(0);
+}
+
+/* =========================
+   INIT DONUT (SAMA PERSIS LANDING)
+========================= */
+const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
+
+const donutCtx = document.getElementById('landingDonut');
+const donutYearEl = document.getElementById('donutYear');
+const donutUnitEl = document.getElementById('donutUnit');
+
+let donutChart = null;
+
+if(donutCtx){
+  const initYear = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
+  const initUnit = donutUnitEl?.value || "all";
+
+  donutChart = new Chart(donutCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
+      datasets: [{
+        data: pickData(donutData, initYear, initUnit, 4),
+        backgroundColor: donutColors,
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      layout: { padding: { right: 70 } },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'right',
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            padding: 12,
+            font: { family: 'Nunito', weight: '400', size: 14 }
+          }
+        },
+        tooltip: { enabled: true }
+      }
+    }
   });
 
-// =========================
-  // DATA DUMMY (contoh)
-  // struktur: data[year][unit]
-  // =========================
-  const donutData = {
-    "2020": {
-      "all": [28, 17, 22, 33],
-      "Fakultas Pertanian": [10, 10, 30, 50]
-    },
-    "2021": {
-      "all": [20, 25, 15, 40],
-      "Fakultas Pertanian": [12, 18, 30, 40]
-    }
-  };
-
-  const barData = {
-    "2020": {
-      "all": [35, 90, 65, 50, 75, 25],
-      "Fakultas Pertanian": [10, 40, 20, 15, 25, 8]
-    },
-    "2021": {
-      "all": [20, 70, 55, 40, 60, 18],
-      "Fakultas Pertanian": [12, 35, 25, 10, 22, 6]
-    }
-  };
-
-  const BAR_LABELS = [
-    ["Pengadaan","Langsung"],
-    ["Penunjukan","Langsung"],
-    ["E-Purchasing/","E-Catalog"],
-    ["Tender","Terbatas"],
-    ["Tender","Terbuka"],
-    ["Swakelola"]
-  ];
-
-  // helper ambil data aman
-  function pickData(obj, year, unit, fallbackLen) {
-    if (obj?.[year]?.[unit]) return obj[year][unit];
-    if (obj?.[year]?.all) return obj[year].all;
-    return new Array(fallbackLen).fill(0);
+  function updateDonut(){
+    const year = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
+    const unit = donutUnitEl?.value || "all";
+    donutChart.data.datasets[0].data = pickData(donutData, year, unit, 4);
+    donutChart.update();
   }
 
-  // =========================
-  // INIT DONUT
-  // =========================
-  const donutCtx = document.getElementById('landingDonut');
-  const donutYearEl = document.getElementById('donutYear');
-  const donutUnitEl = document.getElementById('donutUnit');
+  donutYearEl?.addEventListener('change', updateDonut);
+  donutUnitEl?.addEventListener('change', updateDonut);
+}
 
-  let donutChart = null;
+/* =========================
+   INIT BAR (SAMA PERSIS LANDING)
+========================= */
+const splitLabel = (value) => {
+  if(Array.isArray(value)) return value;
+  const s = String(value ?? '');
+  if(s.includes('\n')) return s.split('\n');
+  const parts = s.trim().split(/\s+/);
+  if(parts.length === 2) return [parts[0], parts[1]];
+  return s;
+};
 
-  if (donutCtx) {
-    const initYear = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-    const initUnit = donutUnitEl?.value || "all";
+const barCtx = document.getElementById('landingBar');
+const barYearEl = document.getElementById('barYear');
+const barUnitEl = document.getElementById('barUnit');
 
-    donutChart = new Chart(donutCtx, {
-      type: 'doughnut',
-      data: {
-        labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
-        datasets: [{
-          data: pickData(donutData, initYear, initUnit, 4),
-          backgroundColor: ['#134a5a','#0f172a','#f6c100','#d6a75c'],
-          borderWidth: 0
-        }]
+let barChart = null;
+
+if(barCtx){
+  const initYear = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
+  const initUnit = barUnitEl?.value || "all";
+
+  barChart = new Chart(barCtx, {
+    type: 'bar',
+    data: {
+      labels: BAR_LABELS,
+      datasets: [{
+        label: initYear,
+        data: pickData(barData, initYear, initUnit, 6),
+        backgroundColor: '#F6C100',
+        borderWidth: 0,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { family: 'Nunito', weight: '400', size: 14 } }
+        },
+        tooltip: { enabled: true }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '68%',
-        plugins: { legend: { display:false } }
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: {
+            stepSize: 20,
+            precision: 0,
+            font: { family: 'Nunito', weight: '400', size: 14 }
+          }
+        },
+        x: {
+          ticks: {
+            maxRotation: 0,
+            minRotation: 0,
+            autoSkip: false,
+            padding: 6,
+            font: { family: 'Nunito', weight: '400', size: 11 },
+            callback: function (value) {
+              const raw = this.getLabelForValue(value);
+              return splitLabel(raw);
+            }
+          },
+          grid: { display: false }
+        }
       }
-    });
-
-    function updateDonut(){
-      const year = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-      const unit = donutUnitEl?.value || "all";
-      donutChart.data.datasets[0].data = pickData(donutData, year, unit, 4);
-      donutChart.update();
-    }
-
-    donutYearEl?.addEventListener('change', updateDonut);
-    donutUnitEl?.addEventListener('change', updateDonut);
-  }
-
-  // =========================
-  // INIT BAR
-  // =========================
-  const barCtx = document.getElementById('landingBar');
-  const barYearEl = document.getElementById('barYear');
-  const barUnitEl = document.getElementById('barUnit');
-
-  let barChart = null;
-
-  if (barCtx) {
-    const initYear = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-    const initUnit = barUnitEl?.value || "all";
-
-    barChart = new Chart(barCtx, {
-  type: 'bar',
-  data: {
-    labels: BAR_LABELS,
-   datasets: [{
-  label: initYear,
-  data: pickData(barData, initYear, initUnit, 6),
-  backgroundColor: '#f6c100',
-  borderWidth: 0,
-
-  borderRadius: { topLeft: 10, topRight: 10, bottomLeft: 0, bottomRight: 0 },
-  borderSkipped: false,
-
-  // 🔥 INI KUNCI NYA
-  barThickness: 34,
-  maxBarThickness: 34
-}]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-
-    // ✅ biar rapi kayak contoh
-    layout: { padding: { left: 8, right: 8, top: 0, bottom: 0 } },
-
-    plugins: {
-      legend: {
-        display: true,
-        position: 'bottom',
-        labels: { boxWidth: 14, boxHeight: 10 }
-      }
-    },
-    scales: {
-      x: { grid: { display:false }, ticks: { color:'#6b7280', font:{ size:11 } } },
-      y: {
-        beginAtZero: true,
-        suggestedMax: 100,
-        ticks: { stepSize: 20, color:'#6b7280' },
-        grid: { color:'rgba(17,24,39,0.08)' }
-      }
-    }
-  }
-});
-
-
-    function updateBar(){
-      const year = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-      const unit = barUnitEl?.value || "all";
-
-      barChart.data.datasets[0].label = year;
-      barChart.data.datasets[0].data = pickData(barData, year, unit, 6);
-      barChart.update();
-    }
-
-    barYearEl?.addEventListener('change', updateBar);
-    barUnitEl?.addEventListener('change', updateBar);
-  }
-
-  const sections = document.querySelectorAll('section[id]');
-const navLinks = document.querySelectorAll('.nav-links a');
-
-window.addEventListener('scroll', () => {
-  let current = '';
-
-  sections.forEach(section => {
-    const sectionTop = section.offsetTop - 120;
-    if (pageYOffset >= sectionTop) {
-      current = section.getAttribute('id');
     }
   });
 
-  navLinks.forEach(link => {
-    link.classList.remove('active');
-    if (link.getAttribute('href')?.includes('#' + current)) {
-      link.classList.add('active');
-    }
-  });
-});
+  function updateBar(){
+    const year = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
+    const unit = barUnitEl?.value || "all";
+    barChart.data.datasets[0].label = year;
+    barChart.data.datasets[0].data = pickData(barData, year, unit, 6);
+    barChart.update();
+  }
+
+  barYearEl?.addEventListener('change', updateBar);
+  barUnitEl?.addEventListener('change', updateBar);
+}
 </script>
 @endpush

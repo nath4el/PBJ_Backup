@@ -112,22 +112,22 @@
         <span class="ic"><i class="bi bi-plus-square"></i></span>
         Tambah Pengadaan
       </a>
+
+      <a class="dash-link {{ request()->routeIs('ppk.kelola.akun') ? 'active' : '' }}" href="{{ route('ppk.kelola.akun') }}">
+  <span class="ic"><i class="bi bi-person-gear"></i></span>
+  Kelola Akun
+</a>
+
     </nav>
 
     {{-- Footer buttons (DISAMAKAN DENGAN ARSIP PBJ) --}}
     <div class="dash-side-actions">
-      <a class="dash-side-btn" href="{{ url('/') }}#unit">
-    <i class="bi bi-house-door"></i>
-    Kembali
-</a>
-      <form method="POST" action="{{ route('logout') }}" style="display: inline; margin: 0; padding: 0;">
-    @csrf
-
-    <a class="dash-side-btn" href="#" onclick="event.preventDefault(); this.closest('form').submit();">
-        <i class="bi bi-box-arrow-right"></i>
-        Keluar
-    </a>
-</form>
+      <a class="dash-side-btn" href="{{ route('ppk.dashboard') }}">
+        <i class="bi bi-house-door"></i> Kembali
+      </a>
+      <a class="dash-side-btn" href="{{ url('/logout') }}">
+        <i class="bi bi-box-arrow-right"></i> Keluar
+      </a>
     </div>
   </aside>
 
@@ -149,7 +149,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[0]['label'] }}</div>
-              <div class="u-value u-value--navy">{{ $summary[0]['value'] }}</div>
+              {{-- ✅ count --}}
+              <div class="u-value u-value--navy js-count" data-count="{{ (int) $summary[0]['value'] }}">0</div>
             </div>
             <div class="u-ic"><i class="bi {{ $summary[0]['icon'] }}"></i></div>
           </div>
@@ -162,7 +163,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">Total Unit Kerja</div>
-              <div class="u-value u-value--navy">{{ $totalUnitKerja }}</div>
+              {{-- ✅ count --}}
+              <div class="u-value u-value--navy js-count" data-count="{{ (int) $totalUnitKerja }}">0</div>
               <div class="u-sub">Unit kerja terdaftar</div>
             </div>
             <div class="u-ic"><i class="bi bi-diagram-3"></i></div>
@@ -180,7 +182,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[1]['label'] }}</div>
-              <div class="u-value u-value--yellow">{{ $summary[1]['value'] }}</div>
+              {{-- ✅ count --}}
+              <div class="u-value u-value--yellow js-count" data-count="{{ (int) $summary[1]['value'] }}">0</div>
             </div>
             <div class="u-ic u-ic--yellow"><i class="bi {{ $summary[1]['icon'] }}"></i></div>
           </div>
@@ -192,7 +195,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[2]['label'] }}</div>
-              <div class="u-value u-value--gray">{{ $summary[2]['value'] }}</div>
+              {{-- ✅ count --}}
+              <div class="u-value u-value--gray js-count" data-count="{{ (int) $summary[2]['value'] }}">0</div>
             </div>
             <div class="u-ic u-ic--gray"><i class="bi {{ $summary[2]['icon'] }}"></i></div>
           </div>
@@ -207,7 +211,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[3]['label'] }}</div>
-              <div class="u-value u-value--navy" id="valPaket">{{ $summary[3]['value'] }}</div>
+              {{-- ✅ count (paket) --}}
+              <div class="u-value u-value--navy js-count" id="valPaket" data-count="{{ (int) $summary[3]['value'] }}">0</div>
               <div class="u-sub">{{ $summary[3]['sub'] }}</div>
             </div>
             <div class="u-ic"><i class="bi {{ $summary[3]['icon'] }}"></i></div>
@@ -231,7 +236,8 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[4]['label'] }}</div>
-              <div class="u-money" id="valNilai">{{ $summary[4]['value'] }}</div>
+              {{-- ✅ count (rupiah) --}}
+              <div class="u-money js-count" id="valNilai" data-count="{{ (int) preg_replace('/[^0-9]/','', $summary[4]['value']) }}">Rp 0</div>
               <div class="u-sub">{{ $summary[4]['sub'] }}</div>
             </div>
             <div class="u-ic u-ic--yellow"><i class="bi {{ $summary[4]['icon'] }}"></i></div>
@@ -893,6 +899,129 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function(){
+
+    // =========================
+    // ✅ COUNT-UP ANIMATION (BARU)
+    // =========================
+    const CountFX = (() => {
+      const DEFAULT_DURATION = 1200; // cepat
+      const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+      const parseNumber = (s) => {
+        const raw = String(s ?? '').replace(/[^\d.-]/g,'');
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      const formatID = (n) => Math.round(n).toLocaleString('id-ID');
+
+      const formatRupiah = (n) => {
+        const x = Math.max(0, Math.round(Number(n || 0)));
+        const parts = x.toString().split('');
+        let out = '';
+        for(let i=0;i<parts.length;i++){
+          const idx = parts.length - i;
+          out += parts[i];
+          if(idx > 1 && idx % 3 === 1) out += '.';
+        }
+        return 'Rp ' + out;
+      };
+
+      const getTarget = (el) => {
+        // data-count jadi sumber utama
+        const dc = el.getAttribute('data-count');
+        if(dc !== null && dc !== '') return parseNumber(dc);
+        return parseNumber(el.textContent);
+      };
+
+      const isMoney = (el) => {
+        // khusus uang: class u-money atau teks/attr mengandung "Rp"
+        return el.classList.contains('u-money') || /rp/i.test(String(el.textContent)) || /rp/i.test(String(el.getAttribute('data-format') || ''));
+      };
+
+      const setText = (el, val) => {
+        el.textContent = isMoney(el) ? formatRupiah(val) : formatID(val);
+      };
+
+      const animate = (el, to, duration = DEFAULT_DURATION) => {
+        if(el.dataset.counted === '1') return;
+        el.dataset.counted = '1';
+
+        const from = 0;
+        const start = performance.now();
+
+        // set awal
+        setText(el, 0);
+
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / duration);
+          const p = easeOutCubic(t);
+          const cur = from + (to - from) * p;
+          setText(el, cur);
+          if(t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      };
+
+      const playOnceWhenVisible = (els) => {
+        const list = Array.from(els || []);
+        if(!list.length) return;
+
+        if(!('IntersectionObserver' in window)){
+          list.forEach(el => animate(el, getTarget(el)));
+          return;
+        }
+
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach(ent => {
+            if(ent.isIntersecting){
+              const el = ent.target;
+              animate(el, getTarget(el));
+              io.unobserve(el);
+            }
+          });
+        }, { threshold: 0.25 });
+
+        list.forEach(el => io.observe(el));
+      };
+
+      // bisa dipakai ulang buat re-animate saat filter berubah
+      const rerunTo = (el, nextValue, duration = DEFAULT_DURATION) => {
+        const to = Number(nextValue || 0);
+        const from = parseNumber(el.textContent);
+
+        const start = performance.now();
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / duration);
+          const p = easeOutCubic(t);
+          const cur = from + (to - from) * p;
+          setText(el, cur);
+          if(t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      };
+
+      const rerunMoneyTo = (el, nextValue, duration = DEFAULT_DURATION) => {
+        const to = Number(nextValue || 0);
+        const from = parseNumber(el.textContent);
+
+        const start = performance.now();
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / duration);
+          const p = easeOutCubic(t);
+          const cur = from + (to - from) * p;
+          el.textContent = formatRupiah(cur);
+          if(t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      };
+
+      return { playOnceWhenVisible, rerunTo, rerunMoneyTo };
+    })();
+
+    // jalankan animasi untuk semua angka summary (sekali)
+    CountFX.playOnceWhenVisible(document.querySelectorAll('.js-count'));
+
     const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
 
     const splitLabel = (value) => {
@@ -1117,6 +1246,10 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: {
+    duration: 1800, // ms (naikin biar lambat)
+    easing: 'easeOutQuart'
+  },
           layout: { padding: { right: 70 } },
           plugins: {
             legend: {
@@ -1152,6 +1285,10 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+           animation: {
+    duration: 1800,
+    easing: 'easeOutQuart'
+  },
           plugins: {
             legend: {
               position: 'bottom',
@@ -1256,14 +1393,26 @@
       if(!fPaket || !elPaket) return;
       const tahun = String(fPaket.value || '');
       const next = makeScaledSingle(basePaket, `paket__${tahun}`);
-      elPaket.textContent = fmtInt(next);
+
+      // ✅ update target + animasi
+      elPaket.setAttribute('data-count', String(next));
+      CountFX.rerunTo(elPaket, next);
+
+      // (tetap konsisten sama logic lama)
+      // elPaket.textContent = fmtInt(next);
     };
 
     const applyNilaiByYear = () => {
       if(!fNilai || !elNilai) return;
       const tahun = String(fNilai.value || '');
       const next = makeScaledSingle(baseNilai, `nilai__${tahun}`);
-      elNilai.textContent = formatRupiah(next);
+
+      // ✅ update target + animasi rupiah
+      elNilai.setAttribute('data-count', String(next));
+      CountFX.rerunMoneyTo(elNilai, next);
+
+      // (tetap konsisten sama logic lama)
+      // elNilai.textContent = formatRupiah(next);
     };
 
     if(fPaket) fPaket.addEventListener('change', applyPaketByYear);
