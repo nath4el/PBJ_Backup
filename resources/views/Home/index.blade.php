@@ -1,5 +1,5 @@
 @extends('layouts.app-home')
 
 @section('content')
-  @include('Landing.IndexContent')
+  @include('Home.IndexContent')
 @endsection

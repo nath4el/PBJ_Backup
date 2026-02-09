@@ -4,18 +4,25 @@
 
 @section('content')
 @php
-  // role default ppk, bisa diganti via /login?role=unit
-  $role = request('role', 'ppk');
-  $showError = request()->boolean('error'); // tampilkan banner kalau ada ?error=1
+    // role default ppk, bisa diganti via /login?role=unit
+    $role = request('role', 'ppk');
+    // Cek apakah ada error dari session (dari redirect back)
+    $hasError = session()->has('errors') || session('status') || request()->boolean('error');
 @endphp
 
 <section class="login-figma">
   <div class="login-figma-bg">
 
-    {{-- Banner error --}}
-    @if($showError || session('error'))
+    {{-- Banner error (dari Laravel atau session) --}}
+    @if($hasError)
       <div class="login-error">
-        {{ session('error') ?? 'Username atau Password Salah!' }}
+        @if($errors->has('email'))
+          {{ $errors->first('email') }}
+        @elseif(session('status'))
+          {{ session('status') }}
+        @else
+          Email atau Kata Sandi salah!
+        @endif
       </div>
     @endif
 
@@ -26,9 +33,10 @@
         Silakan masukkan email dan kata sandi Anda untuk melanjutkan.
       </p>
 
-      {{-- ✅ REAL LOGIN: POST ke server --}}
-      <form class="login-figma-form" id="loginForm" action="{{ route('login.post', ['role' => $role]) }}" method="POST">
+      {{-- Form login REAL (POST ke server) --}}
+      <form class="login-figma-form" id="loginForm" action="{{ url('/login') }}" method="POST">
         @csrf
+
         <input type="hidden" name="role" value="{{ $role }}">
 
         <div class="fg">
@@ -41,7 +49,11 @@
             autocomplete="email"
             value="{{ old('email') }}"
             required
+            autofocus
           >
+          @error('email')
+            <span class="error-text">{{ $message }}</span>
+          @enderror
         </div>
 
         <div class="fg">
@@ -54,10 +66,13 @@
             autocomplete="current-password"
             required
           >
+          @error('password')
+            <span class="error-text">{{ $message }}</span>
+          @enderror
         </div>
 
         <label class="fg-remember">
-          <input type="checkbox" name="remember">
+          <input type="checkbox" name="remember" id="remember">
           <span>Ingat Kata Sandi</span>
         </label>
 

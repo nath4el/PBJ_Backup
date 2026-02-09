@@ -62,7 +62,7 @@
     </div>
 
  <div class="more">
-  <a href="{{ auth()->check() ? route('home') : route('login') }}">
+  <a href="{{ route('ArsipPBJ') }}">
     Lihat Selengkapnya <span style="font-size:18px">›</span>
   </a>
 </div>
@@ -323,198 +323,176 @@
   }
 
   // =========================
-  // INIT DONUT (SAMA PERSIS TEMEN)
-  // =========================
-  const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
+// INIT DONUT (SAMA PERSIS TEMEN)
+// =========================
+const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
 
-  const donutCtx = document.getElementById('landingDonut');
-  const donutYearEl = document.getElementById('donutYear');
-  const donutUnitEl = document.getElementById('donutUnit');
+const donutCtx = document.getElementById('landingDonut');
+const donutYearEl = document.getElementById('donutYear');
+const donutUnitEl = document.getElementById('donutUnit');
 
-  let donutChart = null;
+let donutChart = null;
 
-  if (donutCtx) {
-    const initYear = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-    const initUnit = donutUnitEl?.value || "all";
+if (donutCtx) {
+  const initYear = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
+  const initUnit = donutUnitEl?.value || "all";
 
-    donutChart = new Chart(donutCtx, {
-      type: 'doughnut',
-      data: {
-        labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
-        datasets: [{
-          data: pickData(donutData, initYear, initUnit, 4),
-          backgroundColor: donutColors,
-          borderWidth: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '55%',
+  donutChart = new Chart(donutCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
+      datasets: [{
+        data: pickData(donutData, initYear, initUnit, 4),
+        backgroundColor: donutColors,
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
 
-        // ✅ geser legend agak ke tengah (sama persis temen)
-        layout: { padding: { right: 70 } },
+      // ✅ geser legend agak ke tengah (sama persis temen)
+      layout: { padding: { right: 70 } },
 
-        plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            labels: {
-              boxWidth: 10,
-              boxHeight: 10,
-              padding: 12,
-              font: { family: 'Nunito', weight: '400', size: 14 }
-            }
-          },
-          tooltip: { enabled: true }
-        }
-      }
-    });
-
-    function updateDonut(){
-      const year = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-      const unit = donutUnitEl?.value || "all";
-      donutChart.data.datasets[0].data = pickData(donutData, year, unit, 4);
-      donutChart.update();
-    }
-
-    donutYearEl?.addEventListener('change', updateDonut);
-    donutUnitEl?.addEventListener('change', updateDonut);
-  }
-
-
-  // =========================
-  // INIT BAR (SAMA PERSIS TEMEN)
-  // =========================
-
-  // helper supaya label tidak miring & jadi 2 baris
-  const splitLabel = (value) => {
-    if (Array.isArray(value)) return value;
-    const s = String(value ?? '');
-    if (s.includes('\n')) return s.split('\n');
-    const parts = s.trim().split(/\s+/);
-    if (parts.length === 2) return [parts[0], parts[1]];
-    return s;
-  };
-
-  const barCtx = document.getElementById('landingBar');
-  const barYearEl = document.getElementById('barYear');
-  const barUnitEl = document.getElementById('barUnit');
-
-  let barChart = null;
-
-  if (barCtx) {
-    const initYear = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-    const initUnit = barUnitEl?.value || "all";
-
-    barChart = new Chart(barCtx, {
-      type: 'bar',
-      data: {
-        labels: BAR_LABELS,
-        datasets: [{
-          label: initYear,
-          data: pickData(barData, initYear, initUnit, 6),
-          backgroundColor: '#F6C100',
-          borderWidth: 0,
-
-          // ❗️INI BEDA UTAMA DARI PUNYA KAMU
-          borderRadius: 6   // temen: bulat halus (BUKAN bawah rata)
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              font: { family: 'Nunito', weight: '400', size: 14 }
-            }
-          },
-          tooltip: { enabled: true }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            max: 100,
-            ticks: {
-              stepSize: 20,
-              precision: 0,
-              font: { family: 'Nunito', weight: '400', size: 14 }
-            }
-          },
-          x: {
-            ticks: {
-              maxRotation: 0,
-              minRotation: 0,
-              autoSkip: false,
-              padding: 6,
-              font: { family: 'Nunito', weight: '400', size: 11 },
-
-              // ❗️INI YANG BIKIN SAMA PERSIS
-              callback: function (value) {
-                const raw = this.getLabelForValue(value);
-                return splitLabel(raw);
-              }
-            },
-            grid: { display: false }
+      plugins: {
+        legend: {
+          display: true,
+          position: 'right',
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            padding: 12,
+            font: { family: 'Nunito', weight: '400', size: 14 }
           }
+        },
+        tooltip: { enabled: true }
+      }
+    }
+  });
+
+  function updateDonut(){
+    const year = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
+    const unit = donutUnitEl?.value || "all";
+    donutChart.data.datasets[0].data = pickData(donutData, year, unit, 4);
+    donutChart.update();
+  }
+
+  donutYearEl?.addEventListener('change', updateDonut);
+  donutUnitEl?.addEventListener('change', updateDonut);
+}
+
+
+  // =========================
+// INIT BAR (SAMA PERSIS TEMEN)
+// =========================
+
+// helper supaya label tidak miring & jadi 2 baris
+const splitLabel = (value) => {
+  if (Array.isArray(value)) return value;
+  const s = String(value ?? '');
+  if (s.includes('\n')) return s.split('\n');
+  const parts = s.trim().split(/\s+/);
+  if (parts.length === 2) return [parts[0], parts[1]];
+  return s;
+};
+
+const barCtx = document.getElementById('landingBar');
+const barYearEl = document.getElementById('barYear');
+const barUnitEl = document.getElementById('barUnit');
+
+let barChart = null;
+
+if (barCtx) {
+  const initYear = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
+  const initUnit = barUnitEl?.value || "all";
+
+  barChart = new Chart(barCtx, {
+    type: 'bar',
+    data: {
+      labels: BAR_LABELS,
+      datasets: [{
+        label: initYear,
+        data: pickData(barData, initYear, initUnit, 6),
+        backgroundColor: '#F6C100',
+        borderWidth: 0,
+
+        // ❗️INI BEDA UTAMA DARI PUNYA KAMU
+        borderRadius: 6   // temen: bulat halus (BUKAN bawah rata)
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            font: { family: 'Nunito', weight: '400', size: 14 }
+          }
+        },
+        tooltip: { enabled: true }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: {
+            stepSize: 20,
+            precision: 0,
+            font: { family: 'Nunito', weight: '400', size: 14 }
+          }
+        },
+        x: {
+          ticks: {
+            maxRotation: 0,
+            minRotation: 0,
+            autoSkip: false,
+            padding: 6,
+            font: { family: 'Nunito', weight: '400', size: 11 },
+
+            // ❗️INI YANG BIKIN SAMA PERSIS
+            callback: function (value) {
+              const raw = this.getLabelForValue(value);
+              return splitLabel(raw);
+            }
+          },
+          grid: { display: false }
         }
       }
-    });
-
-    function updateBar(){
-      const year = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-      const unit = barUnitEl?.value || "all";
-
-      barChart.data.datasets[0].label = year;
-      barChart.data.datasets[0].data = pickData(barData, year, unit, 6);
-      barChart.update();
     }
-
-    barYearEl?.addEventListener('change', updateBar);
-    barUnitEl?.addEventListener('change', updateBar);
-  }
-
-  function openDetailModal(){
-    const modal = document.getElementById('detailModal');
-    if(!modal) return;
-    modal.classList.add('show');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeDetailModal(){
-    const modal = document.getElementById('detailModal');
-    if(!modal) return;
-    modal.classList.remove('show');
-    document.body.style.overflow = '';
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeDetailModal();
   });
- // Toggle Dropdown Profile setelah login (versi lebih aman)
-document.addEventListener('DOMContentLoaded', function () {
-    const profileBtn = document.querySelector('.nav-user-btn');
-    const profileMenu = document.querySelector('.nav-user-menu');
 
-    if (profileBtn && profileMenu) {
-        profileBtn.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+  function updateBar(){
+    const year = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
+    const unit = barUnitEl?.value || "all";
 
-            // Toggle tampilkan/sembunyikan menu
-            const isVisible = profileMenu.style.display === 'block';
-            profileMenu.style.display = isVisible ? 'none' : 'block';
-        });
+    barChart.data.datasets[0].label = year;
+    barChart.data.datasets[0].data = pickData(barData, year, unit, 6);
+    barChart.update();
+  }
 
-        // Tutup dropdown jika klik di luar area profile
-        document.addEventListener('click', function (e) {
-            if (!profileBtn.contains(e.target) && !profileMenu.contains(e.target)) {
-                profileMenu.style.display = 'none';
-            }
-        });
-    }
+  barYearEl?.addEventListener('change', updateBar);
+  barUnitEl?.addEventListener('change', updateBar);
+}
+
+function openDetailModal(){
+  const modal = document.getElementById('detailModal');
+  if(!modal) return;
+  modal.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetailModal(){
+  const modal = document.getElementById('detailModal');
+  if(!modal) return;
+  modal.classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDetailModal();
 });
+
 </script>
 @endpush

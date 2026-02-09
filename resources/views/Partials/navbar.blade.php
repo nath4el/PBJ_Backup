@@ -9,35 +9,14 @@
     <nav class="nav-links">
       <a href="{{ route('landing') }}#regulasi" class="nav-link">Regulasi</a>
 
-      <a href="{{ auth()->check() ? route('home') : route('login') }}"
-         class="nav-link {{ request()->routeIs('home') || request()->routeIs('ppk.arsip') || request()->routeIs('unit.arsip') ? 'active' : '' }}">
+      <a href="{{ route('ArsipPBJ') }}"
+         class="nav-link {{ request()->routeIs('ArsipPBJ') ? 'active' : '' }}">
         Arsip PBJ
       </a>
 
       <a href="{{ route('landing') }}#kontak" class="nav-link">Kontak</a>
 
-      @guest
-        <a class="btn btn-white" href="{{ route('login') }}">Masuk</a>
-      @endguest
-
-      @auth
-        <div class="nav-user">
-          <button type="button" class="nav-user-btn" aria-label="User menu">
-            <i class="bi bi-person-circle"></i>
-          </button>
-
-          <div class="nav-user-menu">
-            <div class="nav-user-name">{{ Auth::user()->name ?? 'User' }}</div>
-
-            <form action="{{ route('logout') }}" method="POST">
-              @csrf
-              <button type="submit" class="nav-logout">
-                <i class="bi bi-box-arrow-right"></i> Keluar
-              </button>
-            </form>
-          </div>
-        </div>
-      @endauth
+      <a class="btn btn-white" href="{{ route('login') }}">Masuk</a>
     </nav>
 
   </div>

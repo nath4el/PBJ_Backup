@@ -19,7 +19,7 @@
 
       <div class="hero-illustration">
         <img
-          src="{{ asset('image/landingicon.svg') }}"
+          src="{{ asset('image/amico.png') }}"
           alt="Ilustrasi Arsip"
           class="hero-img"
         >
