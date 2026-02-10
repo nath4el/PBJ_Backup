@@ -69,6 +69,7 @@ Route::get('/arsip/{id}', function ($id) {
     return view('Landing.LihatDetail', compact('id'));
 })->name('arsip.detail');
 
+
 /*
 |--------------------------------------------------------------------------
 | Authenticated Routes
@@ -87,74 +88,97 @@ Route::middleware('auth')->group(function () {
     */
     Route::prefix('unit')->name('unit.')->group(function () {
 
-        Route::get('/dashboard', [UnitController::class, 'dashboard'])->name('dashboard');
+        // Dashboard Unit
+        Route::get('/dashboard', [UnitController::class, 'dashboard'])
+            ->name('dashboard');
+
+        /**
+         * ✅ API Dashboard Unit (AJAX)
+         * dipakai untuk filter tahun summary + chart
+         * GET /unit/dashboard/stats?tahun=2025
+         */
+        Route::get('/dashboard/stats', [UnitController::class, 'dashboardStats'])
+            ->name('dashboard.stats');
+
+        /**
+         * (opsional) jika sebelumnya sudah pakai /dashboard/data
+         * GET /unit/dashboard/data?tahun=2025
+         */
+        Route::get('/dashboard/data', [UnitController::class, 'dashboardStats'])
+            ->name('dashboard.data');
 
         /**
          * ✅ Arsip Unit (utama)
          * GET /unit/arsip
          */
-        Route::get('/arsip', [UnitController::class, 'arsipIndex'])->name('arsip');
+        Route::get('/arsip', [UnitController::class, 'arsipIndex'])
+            ->name('arsip');
 
         /**
          * ✅ Alias rute lama
-         * GET /unit/arsippbj
-         * GET /unit/arsip-pbj
          */
-        Route::get('/arsippbj', [UnitController::class, 'arsipIndex'])->name('arsippbj');
-        Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])->name('arsip.pbj');
+        Route::get('/arsippbj', [UnitController::class, 'arsipIndex'])
+            ->name('arsippbj');
+
+        Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])
+            ->name('arsip.pbj');
 
         /**
          * ✅ Edit & Update arsip
          */
-        Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])->name('arsip.edit');
-        Route::put('/arsip/{id}', [UnitController::class, 'arsipUpdate'])->name('arsip.update');
+        Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])
+            ->name('arsip.edit');
+
+        Route::put('/arsip/{id}', [UnitController::class, 'arsipUpdate'])
+            ->name('arsip.update');
 
         /**
-         * ✅ Hapus arsip (REAL DB DELETE)
-         * - Bulk (dipakai tombol hapus multiple)
-         * - Single (kalau nanti kamu mau hapus 1 item)
+         * ✅ Hapus arsip
          */
-        Route::delete('/arsip', [UnitController::class, 'arsipBulkDestroy'])->name('arsip.bulkDestroy');
-        Route::delete('/arsip/{id}', [UnitController::class, 'arsipDestroy'])->name('arsip.destroy');
+        Route::delete('/arsip', [UnitController::class, 'arsipBulkDestroy'])
+            ->name('arsip.bulkDestroy');
+
+        Route::delete('/arsip/{id}', [UnitController::class, 'arsipDestroy'])
+            ->name('arsip.destroy');
 
         /**
          * ✅ Tambah Pengadaan
          */
-        Route::get('/pengadaan/tambah', [UnitController::class, 'pengadaanCreate'])->name('pengadaan.create');
-        Route::post('/pengadaan/store', [UnitController::class, 'pengadaanStore'])->name('pengadaan.store');
+        Route::get('/pengadaan/tambah', [UnitController::class, 'pengadaanCreate'])
+            ->name('pengadaan.create');
+
+        Route::post('/pengadaan/store', [UnitController::class, 'pengadaanStore'])
+            ->name('pengadaan.store');
 
         /**
-         * ✅ Lihat/stream dokumen lewat controller (anti 404 /storage)
-         * GET /unit/arsip/{id}/dokumen/{field}/{file}
+         * ✅ Lihat/Download dokumen via controller
          */
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [UnitController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
             ->name('arsip.dokumen.show');
 
         /**
-         * ✅ Hapus file dokumen (dipakai modal)
-         * DELETE /unit/arsip/{id}/dokumen
+         * ✅ Hapus dokumen file
          */
         Route::delete('/arsip/{id}/dokumen', [UnitController::class, 'hapusDokumenFile'])
             ->name('arsip.dokumen.hapus');
 
         /**
-         * ✅ (OPSIONAL) endpoint download lama
-         * Jika kamu masih pakai downloadDokumen($id, Request $request)
-         * maka route-nya HARUS punya {id}
-         *
-         * Contoh pemakaian:
-         * GET /unit/arsip/7/dokumen-download?field=dokumen_kak&path=pengadaan/7/dokumen_kak/xxx.pdf
+         * (opsional) endpoint download lama
          */
         Route::get('/arsip/{id}/dokumen-download', [UnitController::class, 'downloadDokumen'])
             ->name('arsip.dokumen.download');
 
         /**
-         * ✅ Kelola akun
+         * ✅ Kelola akun Unit
          */
-        Route::get('/kelola-akun', [UnitController::class, 'kelolaAkun'])->name('kelola.akun');
-        Route::put('/akun', [UnitController::class, 'updateAkun'])->name('akun.update');
+        Route::get('/kelola-akun', [UnitController::class, 'kelolaAkun'])
+            ->name('kelola.akun');
+
+        Route::put('/akun', [UnitController::class, 'updateAkun'])
+            ->name('akun.update');
     });
+
 
     /*
     |--------------------------------------------------------------------------
@@ -163,14 +187,23 @@ Route::middleware('auth')->group(function () {
     */
     Route::prefix('ppk')->name('ppk.')->group(function () {
 
-        Route::get('/dashboard', [PpkController::class, 'dashboard'])->name('dashboard');
+        Route::get('/dashboard', [PpkController::class, 'dashboard'])
+            ->name('dashboard');
 
-        Route::get('/arsip', [PpkController::class, 'arsipIndex'])->name('arsip');
-        Route::get('/arsip/{id}/edit', [PpkController::class, 'arsipEdit'])->name('arsip.edit');
-        Route::put('/arsip/{id}', [PpkController::class, 'arsipUpdate'])->name('arsip.update');
+        Route::get('/arsip', [PpkController::class, 'arsipIndex'])
+            ->name('arsip');
 
-        Route::get('/pengadaan/tambah', [PpkController::class, 'pengadaanCreate'])->name('pengadaan.create');
-        Route::post('/pengadaan/store', [PpkController::class, 'pengadaanStore'])->name('pengadaan.store');
+        Route::get('/arsip/{id}/edit', [PpkController::class, 'arsipEdit'])
+            ->name('arsip.edit');
+
+        Route::put('/arsip/{id}', [PpkController::class, 'arsipUpdate'])
+            ->name('arsip.update');
+
+        Route::get('/pengadaan/tambah', [PpkController::class, 'pengadaanCreate'])
+            ->name('pengadaan.create');
+
+        Route::post('/pengadaan/store', [PpkController::class, 'pengadaanStore'])
+            ->name('pengadaan.store');
 
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [PpkController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
@@ -179,7 +212,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/arsip/{id}/dokumen-download', [PpkController::class, 'downloadDokumen'])
             ->name('arsip.dokumen.download');
 
-        Route::get('/kelola-akun', [PpkController::class, 'kelolaAkun'])->name('kelola.akun');
-        Route::put('/akun', [PpkController::class, 'updateAkun'])->name('akun.update');
+        Route::get('/kelola-akun', [PpkController::class, 'kelolaAkun'])
+            ->name('kelola.akun');
+
+        Route::put('/akun', [PpkController::class, 'updateAkun'])
+            ->name('akun.update');
     });
+
 });

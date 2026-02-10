@@ -17,7 +17,192 @@ class UnitController extends Controller
     public function dashboard()
     {
         $unitName = auth()->user()->name ?? 'Unit Kerja';
-        return view('Unit.Dashboard', compact('unitName'));
+        $unitId   = auth()->user()->unit_id;
+
+        if (!$unitId) {
+            abort(403, 'Akun unit belum terhubung ke unit_id.');
+        }
+
+        // Tahun options diambil dari data pengadaan unit (desc)
+        $tahunOptions = Pengadaan::where('unit_id', $unitId)
+            ->whereNotNull('tahun')
+            ->select('tahun')
+            ->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
+
+        // fallback jika belum ada data
+        if (count($tahunOptions) === 0) {
+            $y = (int)date('Y');
+            $tahunOptions = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
+        }
+
+        // default tahun untuk summary bawah (paket & nilai) = tahun pertama (paling baru)
+        $defaultYear = $tahunOptions[0] ?? (int)date('Y');
+
+        // Summary cards (REAL)
+        $totalArsip = Pengadaan::where('unit_id', $unitId)->count();
+        $publik     = Pengadaan::where('unit_id', $unitId)->where('status_arsip', 'Publik')->count();
+        $privat     = Pengadaan::where('unit_id', $unitId)->where('status_arsip', 'Privat')->count();
+
+        $paketYear  = Pengadaan::where('unit_id', $unitId)->where('tahun', $defaultYear)->count();
+        $nilaiYear  = (int) Pengadaan::where('unit_id', $unitId)->where('tahun', $defaultYear)->sum('nilai_kontrak');
+
+        $summary = [
+            ["label"=>"Total Arsip", "value"=>$totalArsip, "accent"=>"navy", "icon"=>"bi-file-earmark-text"],
+            ["label"=>"Arsip Publik", "value"=>$publik, "accent"=>"yellow", "icon"=>"bi-eye"],
+            ["label"=>"Arsip Private", "value"=>$privat, "accent"=>"gray", "icon"=>"bi-eye-slash"],
+            ["label"=>"Total Arsip Pengadaan", "value"=>$paketYear, "accent"=>"navy", "icon"=>"bi-file-earmark-text", "sub"=>"Paket Pengadaan Barang dan Jasa"],
+            ["label"=>"Total Nilai Pengadaan", "value"=>$this->formatRupiahNumber($nilaiYear), "accent"=>"yellow", "icon"=>"bi-buildings", "sub"=>"Nilai Kontrak Pengadaan"],
+        ];
+
+        // Chart 1: Status Pekerjaan
+        $statusLabels = ["Perencanaan","Pemilihan","Pelaksanaan","Selesai"];
+        $statusValues = $this->countByStatusPekerjaan($unitId, null, $statusLabels);
+
+        // Chart 2: Metode Pengadaan (6 batang)
+        $barLabels = [
+            "Pengadaan\nLangsung",
+            "Penunjukan\nLangsung",
+            "E-Purchasing /\nE-Catalog",
+            "Tender\nTerbatas",
+            "Tender\nTerbuka",
+            "Swakelola"
+        ];
+        $barValues = $this->countByMetodePengadaan($unitId, null, $barLabels);
+
+        return view('Unit.Dashboard', compact(
+            'unitName',
+            'summary',
+            'tahunOptions',
+            'statusLabels',
+            'statusValues',
+            'barLabels',
+            'barValues',
+            'defaultYear'
+        ));
+    }
+
+    /**
+     * Endpoint JSON untuk dashboard (dipakai oleh filter tahun di frontend).
+     * Route: GET /unit/dashboard/stats?tahun=2025 (tahun opsional)
+     */
+    public function dashboardStats(Request $request)
+    {
+        $unitId = auth()->user()->unit_id;
+        if (!$unitId) {
+            return response()->json(['message' => 'Akun unit belum terhubung ke unit_id.'], 403);
+        }
+
+        $tahun = $request->query('tahun');
+        $tahun = ($tahun === null || $tahun === '') ? null : (int)$tahun;
+
+        // Summary yang tergantung tahun
+        $paket = Pengadaan::where('unit_id', $unitId)
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->count();
+
+        $nilai = (int) Pengadaan::where('unit_id', $unitId)
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->sum('nilai_kontrak');
+
+        // Charts
+        $statusLabels = ["Perencanaan","Pemilihan","Pelaksanaan","Selesai"];
+        $statusValues = $this->countByStatusPekerjaan($unitId, $tahun, $statusLabels);
+
+        $barLabels = [
+            "Pengadaan\nLangsung",
+            "Penunjukan\nLangsung",
+            "E-Purchasing /\nE-Catalog",
+            "Tender\nTerbatas",
+            "Tender\nTerbuka",
+            "Swakelola"
+        ];
+        $barValues = $this->countByMetodePengadaan($unitId, $tahun, $barLabels);
+
+        return response()->json([
+            'tahun' => $tahun,
+            'paket' => [
+                'count' => $paket,
+            ],
+            'nilai' => [
+                'sum' => $nilai,
+                'formatted' => $this->formatRupiahNumber($nilai),
+            ],
+            'status' => [
+                'labels' => $statusLabels,
+                'values' => $statusValues,
+            ],
+            'metode' => [
+                'labels' => $barLabels,
+                'values' => $barValues,
+            ],
+        ]);
+    }
+
+    /**
+     * Alias kompatibilitas kalau di web.php masih pakai nama method dashboardData
+     */
+    public function dashboardData(Request $request)
+    {
+        return $this->dashboardStats($request);
+    }
+
+    private function countByStatusPekerjaan(int $unitId, ?int $tahun, array $labels): array
+    {
+        $rows = Pengadaan::where('unit_id', $unitId)
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->select('status_pekerjaan', DB::raw('COUNT(*) as cnt'))
+            ->groupBy('status_pekerjaan')
+            ->pluck('cnt', 'status_pekerjaan')
+            ->toArray();
+
+        return array_map(function ($lbl) use ($rows) {
+            return (int)($rows[$lbl] ?? 0);
+        }, $labels);
+    }
+
+    private function countByMetodePengadaan(int $unitId, ?int $tahun, array $labels): array
+    {
+        // Mapping label dashboard -> nilai DB (tweak di sini kalau isi DB beda)
+        $map = [
+            "Pengadaan\nLangsung"          => ["Pengadaan Langsung", "Pengadaan\nLangsung"],
+            "Penunjukan\nLangsung"        => ["Penunjukan Langsung", "Penunjukan\nLangsung"],
+            "E-Purchasing /\nE-Catalog"   => ["E-Purchasing / E-Catalog", "E-Purchasing/E-Catalog", "E-Purchasing", "E-Catalog", "E-Catalogue"],
+            "Tender\nTerbatas"            => ["Tender Terbatas", "Tender\nTerbatas"],
+            "Tender\nTerbuka"             => ["Tender Terbuka", "Tender\nTerbuka", "Tender"],
+            "Swakelola"                   => ["Swakelola"],
+        ];
+
+        $base = Pengadaan::where('unit_id', $unitId)
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun));
+
+        $raw = (clone $base)
+            ->select('jenis_pengadaan', DB::raw('COUNT(*) as cnt'))
+            ->groupBy('jenis_pengadaan')
+            ->pluck('cnt', 'jenis_pengadaan')
+            ->toArray();
+
+        $out = [];
+        foreach ($labels as $lbl) {
+            $alts = $map[$lbl] ?? [$lbl];
+            $sum = 0;
+            foreach ($alts as $k) {
+                $sum += (int)($raw[$k] ?? 0);
+            }
+            $out[] = $sum;
+        }
+
+        return $out;
+    }
+
+    private function formatRupiahNumber($value): string
+    {
+        $num = (int)($value ?? 0);
+        return 'Rp ' . number_format($num, 0, ',', '.');
     }
 
     /**
@@ -38,7 +223,6 @@ class UnitController extends Controller
 
         $arsips = $query->paginate(10)->withQueryString();
 
-        // Map ke format yang dipakai Blade
         $mapped = $arsips->getCollection()->map(function (Pengadaan $p) {
             return [
                 'id' => $p->id,
@@ -58,7 +242,6 @@ class UnitController extends Controller
                 'nama_rekanan' => $p->nama_rekanan ?? '-',
                 'unit' => $p->unit?->nama ?? '-',
 
-                // ✅ link dokumen via route controller
                 'dokumen' => $this->buildDokumenList($p),
 
                 'dokumen_tidak_dipersyaratkan' => $this->normalizeArray($p->dokumen_tidak_dipersyaratkan),
@@ -124,11 +307,6 @@ class UnitController extends Controller
             ->with('success', 'Arsip berhasil diperbarui.');
     }
 
-    /**
-     * ✅ DELETE 1 arsip (real DB) + hapus folder dokumen
-     * Route: DELETE /unit/arsip/{id}  name: unit.arsip.destroy
-     * Return JSON (biar cocok untuk fetch di Blade)
-     */
     public function arsipDestroy(Request $request, $id)
     {
         $unitId = auth()->user()->unit_id;
@@ -142,9 +320,7 @@ class UnitController extends Controller
 
         DB::beginTransaction();
         try {
-            // hapus semua file dokumen dalam folder pengadaan/{id}
             Storage::disk('public')->deleteDirectory("pengadaan/{$pengadaan->id}");
-
             $pengadaan->delete();
 
             DB::commit();
@@ -158,11 +334,6 @@ class UnitController extends Controller
         }
     }
 
-    /**
-     * ✅ DELETE banyak arsip (real DB) + hapus folder dokumen
-     * Route: DELETE /unit/arsip  name: unit.arsip.bulkDestroy
-     * Body JSON: { ids: [1,2,3] }
-     */
     public function arsipBulkDestroy(Request $request)
     {
         $unitId = auth()->user()->unit_id;
@@ -264,7 +435,6 @@ class UnitController extends Controller
         $data['hps'] = $toInt($data['hps'] ?? null);
         $data['nilai_kontrak'] = $toInt($data['nilai_kontrak'] ?? null);
 
-        // dokumen_tidak_dipersyaratkan konsisten array
         $docTidak = [];
         if (!empty($data['dokumen_tidak_dipersyaratkan']) && is_array($data['dokumen_tidak_dipersyaratkan'])) {
             $docTidak = $data['dokumen_tidak_dipersyaratkan'];
@@ -366,6 +536,52 @@ class UnitController extends Controller
         return Storage::disk('public')->download($matchPath, basename($matchPath));
     }
 
+    /**
+     * ✅ Endpoint download lama (kompat)
+     * GET /unit/arsip/{id}/dokumen-download?field=...&path=...
+     */
+    public function downloadDokumen($id, Request $request)
+    {
+        $unitId = auth()->user()->unit_id;
+        if (!$unitId) {
+            abort(403, 'Akun unit belum terhubung ke unit_id.');
+        }
+
+        $request->validate([
+            'field' => 'required|string|max:100',
+            'path'  => 'required|string',
+        ]);
+
+        $field = $request->query('field');
+        $path  = ltrim($request->query('path'), '/');
+
+        $allowed = $this->dokumenFieldLabels();
+        if (!array_key_exists($field, $allowed)) {
+            abort(404);
+        }
+
+        $pengadaan = Pengadaan::where('id', $id)
+            ->where('unit_id', $unitId)
+            ->firstOrFail();
+
+        $arr = $this->normalizeArray($pengadaan->{$field});
+
+        // Pastikan path benar-benar milik record & field ini
+        $ok = false;
+        foreach ($arr as $p) {
+            if (ltrim((string)$p, '/') === $path) {
+                $ok = true;
+                break;
+            }
+        }
+
+        if (!$ok || !Storage::disk('public')->exists($path)) {
+            abort(404);
+        }
+
+        return Storage::disk('public')->download($path, basename($path));
+    }
+
     public function hapusDokumenFile(Request $request, $id)
     {
         $unitId = auth()->user()->unit_id;
@@ -407,9 +623,6 @@ class UnitController extends Controller
         ]);
     }
 
-    // =========================
-    // KELOLA AKUN (UNIT)
-    // =========================
     public function kelolaAkun()
     {
         $unitName = auth()->user()->name ?? 'Unit Kerja';

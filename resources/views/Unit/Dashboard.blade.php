@@ -21,38 +21,6 @@
 </head>
 
 <body class="dash-body">
-@php
-  // dummy frontend (nanti backend tinggal ganti)
-  $unitName = "Fakultas Teknik";
-
-  // TOP SUMMARY (sesuai gambar)
-  $summary = [
-    ["label"=>"Total Arsip", "value"=>7, "accent"=>"navy", "icon"=>"bi-file-earmark-text"],
-    ["label"=>"Arsip Publik", "value"=>5, "accent"=>"yellow", "icon"=>"bi-eye"],
-    ["label"=>"Arsip Private", "value"=>2, "accent"=>"gray", "icon"=>"bi-eye-slash"],
-    ["label"=>"Total Paket Pengadaan", "value"=>7, "accent"=>"navy", "icon"=>"bi-file-earmark-text", "sub"=>"Paket Pengadaan Barang dan Jasa"],
-    ["label"=>"Total Nilai Pengadaan", "value"=>"Rp 1.200.000.000", "accent"=>"yellow", "icon"=>"bi-buildings", "sub"=>"Nilai Kontrak Pengadaan"],
-  ];
-
-  // opsi filter (dummy)
-  $tahunOptions = [2022, 2023, 2024, 2025, 2026];
-  $unitOptions  = ["Semua Unit", "Fakultas Teknik", "Fakultas Hukum", "Fakultas Ekonomi dan Bisnis"];
-
-  // dummy data chart (nanti backend)
-  $statusLabels = ["Perencanaan","Pemilihan","Pelaksanaan","Selesai"];
-  $statusValues = [25, 15, 20, 30];
-
-  // ✅ UPDATE: bar jadi 6 batang seperti gambar
-  $barLabels = [
-    "Pengadaan\nLangsung",
-    "Penunjukan\nLangsung",
-    "E-Purchasing /\nE-Catalog",
-    "Tender\nTerbatas",
-    "Tender\nTerbuka",
-    "Swakelola"
-  ];
-  $barValues = [35, 90, 65, 50, 75, 25];
-@endphp
 
 <div class="dash-wrap">
   {{-- SIDEBAR (konsisten dengan tambah pengadaan) --}}
@@ -89,10 +57,10 @@
         Tambah Pengadaan
       </a>
 
-       <a class="dash-link" href="{{ route('unit.kelola.akun') }}">
-    <span class="ic"><i class="bi bi-person-gear"></i></span>
-    Kelola Akun
-  </a>
+      <a class="dash-link" href="{{ route('unit.kelola.akun') }}">
+        <span class="ic"><i class="bi bi-person-gear"></i></span>
+        Kelola Akun
+      </a>
     </nav>
 
     {{-- Footer buttons (DISAMAKAN DENGAN ARSIP PBJ) --}}
@@ -109,14 +77,12 @@
   {{-- MAIN --}}
   <main class="dash-main">
     <header class="dash-header">
-      {{-- ✅ semi-bold hanya judul page --}}
       <h1>Dashboard PIC Unit</h1>
       <p>Kelola arsip pengadaan barang dan jasa {{ $unitName }}</p>
     </header>
 
-    {{-- SUMMARY CARDS (layout sesuai gambar: 3 atas, lalu 2 bawah) --}}
+    {{-- SUMMARY CARDS --}}
     <section class="u-sum">
-      {{-- row 1 (3 card) --}}
       <div class="u-sum-row u-sum-row--3">
         {{-- 1 --}}
         <div class="u-card">
@@ -124,7 +90,6 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[0]['label'] }}</div>
-              {{-- ✅ count --}}
               <div class="u-value u-value--navy js-count" data-count="{{ (int) $summary[0]['value'] }}">0</div>
             </div>
             <div class="u-ic"><i class="bi {{ $summary[0]['icon'] }}"></i></div>
@@ -137,7 +102,6 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[1]['label'] }}</div>
-              {{-- ✅ count --}}
               <div class="u-value u-value--yellow js-count" data-count="{{ (int) $summary[1]['value'] }}">0</div>
             </div>
             <div class="u-ic u-ic--yellow"><i class="bi {{ $summary[1]['icon'] }}"></i></div>
@@ -150,7 +114,6 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[2]['label'] }}</div>
-              {{-- ✅ count --}}
               <div class="u-value u-value--gray js-count" data-count="{{ (int) $summary[2]['value'] }}">0</div>
             </div>
             <div class="u-ic u-ic--gray"><i class="bi {{ $summary[2]['icon'] }}"></i></div>
@@ -158,7 +121,6 @@
         </div>
       </div>
 
-      {{-- row 2 (2 card) --}}
       <div class="u-sum-row u-sum-row--2">
         {{-- 4 --}}
         <div class="u-card">
@@ -166,20 +128,17 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[3]['label'] }}</div>
-              {{-- ✅ ID supaya nilai bisa berubah saat filter tahun --}}
-              {{-- ✅ count --}}
               <div class="u-value u-value--navy js-count" id="valPaket" data-count="{{ (int) $summary[3]['value'] }}">0</div>
               <div class="u-sub">{{ $summary[3]['sub'] }}</div>
             </div>
             <div class="u-ic"><i class="bi {{ $summary[3]['icon'] }}"></i></div>
           </div>
 
-          {{-- ✅ FILTER TAHUN (bawah kanan) --}}
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunPaket">
                 @foreach($tahunOptions as $t)
-                  <option value="{{ $t }}">{{ $t }}</option>
+                  <option value="{{ $t }}" {{ (isset($defaultYear) && (int)$defaultYear === (int)$t) ? 'selected' : '' }}>{{ $t }}</option>
                 @endforeach
               </select>
               <i class="bi bi-chevron-down"></i>
@@ -193,20 +152,17 @@
           <div class="u-top">
             <div>
               <div class="u-label">{{ $summary[4]['label'] }}</div>
-              {{-- ✅ ID supaya nilai bisa berubah saat filter tahun --}}
-              {{-- ✅ count (rupiah) --}}
               <div class="u-money js-count" id="valNilai" data-count="{{ (int) preg_replace('/[^0-9]/','', $summary[4]['value']) }}">Rp 0</div>
               <div class="u-sub">{{ $summary[4]['sub'] }}</div>
             </div>
             <div class="u-ic u-ic--yellow"><i class="bi {{ $summary[4]['icon'] }}"></i></div>
           </div>
 
-          {{-- ✅ FILTER TAHUN (bawah kanan) --}}
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunNilai">
                 @foreach($tahunOptions as $t)
-                  <option value="{{ $t }}">{{ $t }}</option>
+                  <option value="{{ $t }}" {{ (isset($defaultYear) && (int)$defaultYear === (int)$t) ? 'selected' : '' }}>{{ $t }}</option>
                 @endforeach
               </select>
               <i class="bi bi-chevron-down"></i>
@@ -216,20 +172,17 @@
       </div>
     </section>
 
-    {{-- STATISTIKA (2 card chart) --}}
+    {{-- STATISTIKA --}}
     <section class="u-charts">
-      {{-- Chart 1: Donut --}}
+      {{-- Donut --}}
       <div class="u-chart-card">
-        {{-- ✅ subjudul harus normal + tombol detail --}}
         <div class="u-chart-head">
           <div class="u-chart-title">Status Arsip</div>
 
-          {{-- ✅ tombol detail (lingkaran kecil) --}}
           <button class="u-info-btn" type="button" data-pop="popDonut" aria-label="Lihat detail Status Arsip">
             <i class="bi bi-info"></i>
           </button>
 
-          {{-- ✅ popup detail (dekat tombol) --}}
           <div id="popDonut" class="u-popover" role="dialog" aria-hidden="true">
             <div class="u-popover-title">Detail Status Arsip</div>
             <div class="u-popover-meta">
@@ -242,7 +195,6 @@
 
         <div class="u-chart-divider"></div>
 
-        {{-- ✅ HANYA FILTER TAHUN + lebar full --}}
         <div class="u-chart-filters u-chart-filters--one">
           <div class="u-select u-select--full">
             <select id="fTahun1">
@@ -260,17 +212,15 @@
         </div>
       </div>
 
-      {{-- Chart 2: Bar --}}
+      {{-- Bar --}}
       <div class="u-chart-card">
         <div class="u-chart-head">
           <div class="u-chart-title">Metode Pengadaan</div>
 
-          {{-- ✅ tombol detail (lingkaran kecil) --}}
           <button class="u-info-btn" type="button" data-pop="popBar" aria-label="Lihat detail Metode Pengadaan">
             <i class="bi bi-info"></i>
           </button>
 
-          {{-- ✅ popup detail (dekat tombol) --}}
           <div id="popBar" class="u-popover" role="dialog" aria-hidden="true">
             <div class="u-popover-title">Detail Metode Pengadaan</div>
             <div class="u-popover-meta">
@@ -283,7 +233,6 @@
 
         <div class="u-chart-divider"></div>
 
-        {{-- ✅ HANYA FILTER TAHUN + lebar full --}}
         <div class="u-chart-filters u-chart-filters--one">
           <div class="u-select u-select--full">
             <select id="fTahun2">
@@ -305,361 +254,125 @@
 </div>
 
 <style>
-  /* =============================
-     DASHBOARD OVERRIDE (NO BOLD)
-     Aturan:
-     - h1 (judul page) semi-bold
-     - lainnya normal
-  ============================= */
-
-  .dash-body{
-    font-size: 18px;
-    line-height: 1.6;
-    font-weight: 400;
-  }
-
-  /* ✅ FIT 1 LAYAR: tidak bisa scroll page */
-  html, body{
-    height: 100%;
-    overflow: hidden;
-  }
-  .dash-wrap{
-    height: 100vh;
-    overflow: hidden;
-  }
-  .dash-main{
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  /* pastikan judul page saja yang semi-bold */
+  /* ====== (CSS kamu: TIDAK DIUBAH) ====== */
+  .dash-body{ font-size: 18px; line-height: 1.6; font-weight: 400; }
+  html, body{ height: 100%; overflow: hidden; }
+  .dash-wrap{ height: 100vh; overflow: hidden; }
+  .dash-main{ height: 100vh; overflow: hidden; }
   .dash-header h1{ font-weight: 600 !important; }
   .dash-header p{ font-weight: 400 !important; }
-
-  /* matikan bold dari style lama */
-  .u-label,
-  .u-value,
-  .u-money,
-  .u-sub,
-  .u-chart-title,
-  .u-select select{
-    font-weight: 400 !important;
-  }
-
-  /* ✅ tambahan: mini filter tahun di card (bawah kanan) */
+  .u-label, .u-value, .u-money, .u-sub, .u-chart-title, .u-select select{ font-weight: 400 !important; }
   .u-card{ position: relative; }
-  .u-card-filter{
-    position: absolute;
-    right: 12px;
-    bottom: 10px;
-  }
-
+  .u-card-filter{ position: absolute; right: 12px; bottom: 10px; }
   .u-mini-select{ position: relative; }
   .u-mini-select select{
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 8px 32px 8px 12px;
-    font-family: inherit;
-    font-size: 14px;
-    font-weight: 400 !important;
-    background: #fff;
-    outline: none;
-    appearance: none;
-    cursor: pointer;
+    border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 32px 8px 12px;
+    font-family: inherit; font-size: 14px; font-weight: 400 !important;
+    background: #fff; outline: none; appearance: none; cursor: pointer;
   }
   .u-mini-select i{
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    opacity: .6;
-    pointer-events: none;
-    font-size: 12px;
+    position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); opacity: .6; pointer-events: none; font-size: 12px;
   }
-
-  /* Sidebar tetap (tidak ikut scroll) */
   .dash-sidebar{
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow: hidden;
-    display:flex;
-    flex-direction:column;
+    position: sticky; top: 0; height: 100vh; overflow: hidden;
+    display:flex; flex-direction:column;
   }
-
-  /* Summary layout */
   .u-sum{ display:grid; gap: 16px; }
   .u-sum-row{ display:grid; gap: 16px; }
   .u-sum-row--3{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .u-sum-row--2{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .u-card{
-    background:#fff;
-    border: 1px solid #e6eef2;
-    border-radius: 14px;
+    background:#fff; border: 1px solid #e6eef2; border-radius: 14px;
     box-shadow: 0 10px 20px rgba(2,8,23,.04);
-    overflow:hidden;
-    position:relative;
-    padding: 16px 16px 14px;
-    min-height: 86px;
+    overflow:hidden; position:relative; padding: 16px 16px 14px; min-height: 86px;
   }
-  .u-bar{
-    position:absolute;
-    left:0; top:0; bottom:0;
-    width: 4px;
-    border-radius: 14px 0 0 14px;
-  }
+  .u-bar{ position:absolute; left:0; top:0; bottom:0; width: 4px; border-radius: 14px 0 0 14px; }
   .u-bar--navy{ background: #184f61; }
   .u-bar--yellow{ background: #f6c100; }
   .u-bar--gray{ background: #0f172a; opacity:.75; }
 
-  .u-top{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap: 14px;
-  }
-
-  .u-label{
-    font-size: 16px;
-    color: #64748b;
-    margin-bottom: 6px;
-  }
-
-  .u-value{
-    font-size: 34px;
-    line-height: 1;
-  }
+  .u-top{ display:flex; align-items:flex-start; justify-content:space-between; gap: 14px; }
+  .u-label{ font-size: 16px; color: #64748b; margin-bottom: 6px; }
+  .u-value{ font-size: 34px; line-height: 1; }
   .u-value--navy{ color: #184f61; }
   .u-value--yellow{ color: #f6c100; }
   .u-value--gray{ color: #0f172a; opacity:.85; }
-
-  .u-money{
-    font-size: 34px;
-    line-height: 1.05;
-    color: #c98800;
-  }
-
-  .u-sub{
-    margin-top: 8px;
-    font-size: 14px;
-    color: #94a3b8;
-  }
-
+  .u-money{ font-size: 34px; line-height: 1.05; color: #c98800; }
+  .u-sub{ margin-top: 8px; font-size: 14px; color: #94a3b8; }
   .u-ic{
-    width: 40px; height: 40px;
-    display:grid; place-items:center;
-    border-radius: 10px;
-    background: #f1f5f9;
-    color: #184f61;
-    font-size: 20px;
-    flex: 0 0 auto;
+    width: 40px; height: 40px; display:grid; place-items:center; border-radius: 10px;
+    background: #f1f5f9; color: #184f61; font-size: 20px; flex: 0 0 auto;
   }
   .u-ic--yellow{ color:#c98800; background:#fff6cc; }
   .u-ic--gray{ color:#0f172a; background:#eef2f7; }
 
-  /* Charts */
   .u-charts{
-    margin-top: 18px;
-    display:grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 18px; display:grid; grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
   }
   .u-chart-card{
-    background:#fff;
-    border: 1px solid #e6eef2;
-    border-radius: 18px;
-    padding: 14px 16px 16px;
-    box-shadow: 0 10px 20px rgba(2,8,23,.04);
+    background:#fff; border: 1px solid #e6eef2; border-radius: 18px;
+    padding: 14px 16px 16px; box-shadow: 0 10px 20px rgba(2,8,23,.04);
     position: relative;
   }
+  .u-chart-head{ position: relative; display:flex; align-items:center; justify-content:center; min-height: 28px; }
+  .u-chart-title{ text-align:center; font-size: 20px; color:#0f172a; margin-top: 2px; }
 
-  /* ✅ header chart + tombol info */
-  .u-chart-head{
-    position: relative;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height: 28px;
-  }
-
-  /* subjudul normal */
-  .u-chart-title{
-    text-align:center;
-    font-size: 20px;
-    color:#0f172a;
-    margin-top: 2px;
-  }
-
-  /* ✅ tombol detail: putih + frame tebal (sama seperti PPK) */
   .u-info-btn{
-    position:absolute;
-    right: 0;
-    top: 0;
-    width: 26px;
-    height: 26px;
-    border-radius: 999px;
-    border: 2px solid #184f61;
-    background:#fff;
-    display:grid;
-    place-items:center;
-    cursor:pointer;
-    line-height: 1;
-    padding: 0;
-    color:#184f61;
-    box-shadow: 0 10px 20px rgba(2,8,23,.06);
+    position:absolute; right: 0; top: 0; width: 26px; height: 26px;
+    border-radius: 999px; border: 2px solid #184f61; background:#fff;
+    display:grid; place-items:center; cursor:pointer; line-height: 1; padding: 0;
+    color:#184f61; box-shadow: 0 10px 20px rgba(2,8,23,.06);
   }
-  .u-info-btn i{
-    font-size: 14px;
-    opacity: .9;
-    pointer-events:none;
-    -webkit-text-stroke: .4px #184f61;
-  }
-  .u-info-btn:hover{
-    border-color:#143f4d;
-    transform: translateY(-.5px);
-  }
+  .u-info-btn i{ font-size: 14px; opacity: .9; pointer-events:none; -webkit-text-stroke: .4px #184f61; }
+  .u-info-btn:hover{ border-color:#143f4d; transform: translateY(-.5px); }
 
-  /* ✅ popover detail (dekat tombol) */
   .u-popover{
-    position:absolute;
-    right: 0;
-    top: 30px;
-    width: 380px;
-    background:#fff;
-    border: 1px solid #e6eef2;
-    border-radius: 12px;
+    position:absolute; right: 0; top: 30px; width: 380px;
+    background:#fff; border: 1px solid #e6eef2; border-radius: 12px;
     box-shadow: 0 18px 30px rgba(2,8,23,.12);
-    padding: 10px 10px 8px;
-    z-index: 50;
-    display:none;
+    padding: 10px 10px 8px; z-index: 50; display:none;
   }
   .u-popover.is-open{ display:block; }
   .u-popover::before{
-    content:"";
-    position:absolute;
-    right: 12px;
-    top: -6px;
-    width: 10px;
-    height: 10px;
-    background:#fff;
-    border-left: 1px solid #e6eef2;
-    border-top: 1px solid #e6eef2;
+    content:""; position:absolute; right: 12px; top: -6px; width: 10px; height: 10px;
+    background:#fff; border-left: 1px solid #e6eef2; border-top: 1px solid #e6eef2;
     transform: rotate(45deg);
   }
-  .u-popover-title{
-    font-size: 14px;
-    color:#0f172a;
-    font-weight: 400 !important;
-    margin-bottom: 4px;
-  }
-  .u-popover-meta{
-    font-size: 12px;
-    color:#64748b;
-    margin-bottom: 8px;
-  }
-  .u-popover-list{
-    display:grid;
-    gap: 6px;
-    max-height: 160px;
-    overflow:auto;
-    padding-right: 2px;
-  }
+  .u-popover-title{ font-size: 14px; color:#0f172a; font-weight: 400 !important; margin-bottom: 4px; }
+  .u-popover-meta{ font-size: 12px; color:#64748b; margin-bottom: 8px; }
+  .u-popover-list{ display:grid; gap: 6px; max-height: 160px; overflow:auto; padding-right: 2px; }
   .u-popover-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap: 10px;
-    border: 1px solid #eef2f7;
-    border-radius: 10px;
-    padding: 8px 8px;
+    display:flex; align-items:center; justify-content:space-between; gap: 10px;
+    border: 1px solid #eef2f7; border-radius: 10px; padding: 8px 8px;
   }
-  .u-popover-left{
-    display:flex;
-    align-items:center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .u-dot{
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background:#184f61;
-    flex: 0 0 auto;
-  }
-  .u-popover-name{
-    font-size: 13px;
-    color:#0f172a;
-    white-space: nowrap;
-    overflow:hidden;
-    text-overflow: ellipsis;
-  }
-  .u-popover-val{
-    font-size: 13px;
-    color:#0f172a;
-    flex: 0 0 auto;
-  }
-  .u-popover-foot{
-    margin-top: 8px;
-    font-size: 11px;
-    color:#94a3b8;
-    text-align:right;
-  }
+  .u-popover-left{ display:flex; align-items:center; gap: 8px; min-width: 0; }
+  .u-dot{ width: 8px; height: 8px; border-radius: 999px; background:#184f61; flex: 0 0 auto; }
+  .u-popover-name{ font-size: 13px; color:#0f172a; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+  .u-popover-val{ font-size: 13px; color:#0f172a; flex: 0 0 auto; }
+  .u-popover-foot{ margin-top: 8px; font-size: 11px; color:#94a3b8; text-align:right; }
 
-  .u-chart-divider{
-    height: 1px;
-    background:#e6eef2;
-    margin: 10px 0 12px;
-  }
-
-  .u-chart-filters{
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-
-  /* ✅ UPDATE: hanya 1 filter (tahun) dan full width */
-  .u-chart-filters--one{
-    grid-template-columns: 1fr !important;
-  }
-  .u-select--full{
-    width: 100%;
-  }
-  .u-select--full select{
-    width: 100%;
-  }
+  .u-chart-divider{ height: 1px; background:#e6eef2; margin: 10px 0 12px; }
+  .u-chart-filters{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .u-chart-filters--one{ grid-template-columns: 1fr !important; }
+  .u-select--full{ width: 100%; }
+  .u-select--full select{ width: 100%; }
 
   .u-select{ position:relative; }
   .u-select select{
-    width: 100%;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 10px 38px 10px 12px;
-    font-size: 16px;
-    outline:none;
-    background:#fff;
-    appearance:none;
+    width: 100%; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 10px 38px 10px 12px; font-size: 16px; outline:none;
+    background:#fff; appearance:none;
   }
   .u-select i{
-    position:absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    opacity:.6;
-    pointer-events:none;
+    position:absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); opacity:.6; pointer-events:none;
   }
-  .u-canvas-wrap{
-    height: 260px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-  .u-canvas-wrap canvas{
-    max-height: 260px !important;
-  }
+  .u-canvas-wrap{ height: 260px; display:flex; align-items:center; justify-content:center; }
+  .u-canvas-wrap canvas{ max-height: 260px !important; }
 
-  /* ✅ supaya muat 1 layar (tanpa scroll) */
   .u-sum{ gap: 14px; }
   .u-sum-row{ gap: 14px; }
   .u-card{ padding: 14px 14px 12px; }
@@ -678,14 +391,7 @@
     .u-sum-row--2{ grid-template-columns: 1fr; }
     .u-charts{ grid-template-columns: 1fr; }
     .u-money, .u-value{ font-size: 28px; }
-
-    /* biar mini filter tetap enak di mobile */
-    .u-card-filter{
-      right: 10px;
-      bottom: 10px;
-    }
-
-    /* di layar kecil: tetap no-scroll page, tapi konten akan mengecil */
+    .u-card-filter{ right: 10px; bottom: 10px; }
     .u-canvas-wrap{ height: 220px; }
     .u-canvas-wrap canvas{ max-height: 220px !important; }
   }
@@ -694,11 +400,14 @@
 <script>
   document.addEventListener('DOMContentLoaded', function(){
 
+    // ✅ FIX: route yang benar sesuai web.php kamu
+    const STATS_URL = @json(route('unit.dashboard.data'));
+
     // =========================
-    // ✅ COUNT-UP ANIMATION (BARU)
+    // ✅ COUNT-UP ANIMATION (tetap)
     // =========================
     const CountFX = (() => {
-      const DEFAULT_DURATION = 1200; // cepat
+      const DEFAULT_DURATION = 1200;
       const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
       const parseNumber = (s) => {
@@ -776,7 +485,6 @@
         list.forEach(el => io.observe(el));
       };
 
-      // rerun ketika nilai berubah karena filter
       const rerunTo = (el, nextValue, duration = DEFAULT_DURATION) => {
         const to = Number(nextValue || 0);
         const from = parseNumber(el.textContent);
@@ -810,26 +518,22 @@
       return { playOnceWhenVisible, rerunTo, rerunMoneyTo };
     })();
 
-    // jalankan animasi untuk semua angka summary (sekali)
     CountFX.playOnceWhenVisible(document.querySelectorAll('.js-count'));
 
-    // ✅ warna donut sesuai gambar (teal gelap, hitam, kuning, coklat muda)
+    // ✅ warna donut sesuai gambar
     const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
 
-    // helper: biar label bar tidak miring + jadi atas-bawah kalau 2 kata
     const splitLabel = (value) => {
       if (Array.isArray(value)) return value;
       const s = String(value ?? '');
-      // utamakan \n yang sudah ada di data
       if (s.includes('\n')) return s.split('\n');
-      // kalau belum ada \n, pecah 2 kata jadi 2 baris
       const parts = s.trim().split(/\s+/);
       if (parts.length === 2) return [parts[0], parts[1]];
       return s;
     };
 
     // =========================
-    // ✅ POPOVER + DETAIL BUILDER
+    // ✅ POPOVER LOGIC (tetap)
     // =========================
     const closeAllPopovers = () => {
       document.querySelectorAll('.u-popover.is-open').forEach(p => {
@@ -838,13 +542,11 @@
       });
     };
 
-    // klik di luar = tutup
     document.addEventListener('click', function(e){
       const isInside = e.target.closest('.u-chart-head');
       if(!isInside) closeAllPopovers();
     });
 
-    // toggle popover by button
     document.querySelectorAll('.u-info-btn').forEach(btn => {
       btn.addEventListener('click', function(e){
         e.preventDefault();
@@ -888,7 +590,6 @@
         };
       });
 
-      // sort by value desc biar informatif
       rows.sort((a,b) => {
         const av = parseInt((a.val || '0').replace(/[^0-9]/g,''), 10) || 0;
         const bv = parseInt((b.val || '0').replace(/[^0-9]/g,''), 10) || 0;
@@ -931,62 +632,30 @@
     };
 
     // =========================
-    // ✅ DUMMY "BERUBAH SESUAI FILTER"
-    // (nanti backend tinggal ganti fetch)
+    // ✅ FETCH STATS (real DB)
     // =========================
-    const hashKey = (s) => {
-      const str = String(s || '');
-      let h = 0;
-      for(let i=0;i<str.length;i++){
-        h = ((h<<5) - h) + str.charCodeAt(i);
-        h |= 0;
-      }
-      return Math.abs(h);
-    };
+    const cache = {};
+    const fetchStats = async (tahun) => {
+      const key = (tahun === null || tahun === undefined) ? '' : String(tahun);
+      if (cache[key]) return cache[key];
 
-    const makeScaled = (baseArr, keyStr) => {
-      const k = hashKey(keyStr);
-      const mul = 0.75 + ((k % 51) / 100); // 0.75 - 1.25
-      return baseArr.map((v, i) => {
-        const wave = 0.92 + (((k + i*17) % 21) / 100); // 0.92 - 1.12
-        const out = Math.max(0, Math.round(Number(v || 0) * mul * wave));
-        return out;
-      });
-    };
+      const url = new URL(STATS_URL, window.location.origin);
+      if (key !== '') url.searchParams.set('tahun', key);
 
-    // ✅ helper untuk summary per tahun (paket & nilai)
-    const parseRupiah = (txt) => {
-      const s = String(txt || '').replace(/[^0-9]/g,'');
-      const n = parseInt(s || '0', 10);
-      return isFinite(n) ? n : 0;
-    };
+      const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error('Gagal memuat data dashboard');
+      const json = await res.json();
 
-    const formatRupiah = (n) => {
-      const x = Math.max(0, Math.round(Number(n || 0)));
-      const parts = x.toString().split('');
-      let out = '';
-      for(let i=0;i<parts.length;i++){
-        const idx = parts.length - i;
-        out += parts[i];
-        if(idx > 1 && idx % 3 === 1) out += '.';
-      }
-      return 'Rp ' + out;
-    };
-
-    const makeScaledSingle = (baseNumber, keyStr) => {
-      const k = hashKey(keyStr);
-      const mul = 0.75 + ((k % 51) / 100);     // 0.75 - 1.25
-      const wave = 0.90 + (((k + 17) % 23) / 100); // 0.90 - 1.12
-      return Math.max(0, Math.round(Number(baseNumber || 0) * mul * wave));
+      cache[key] = json;
+      return json;
     };
 
     // =========================
-    // CHART INSTANCES
+    // CHART INSTANCES (init dari controller)
     // =========================
     let donutChart = null;
     let barChart = null;
 
-    // Donut
     const donutCtx = document.getElementById('donutStatus');
     if(donutCtx){
       donutChart = new Chart(donutCtx, {
@@ -1002,10 +671,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-           animation: {
-    duration: 1800,
-    easing: 'easeOutQuart'
-  },
+          animation: { duration: 1800, easing: 'easeOutQuart' },
           layout: { padding: { right: 70 } },
           plugins: {
             legend: {
@@ -1024,7 +690,6 @@
       });
     }
 
-    // Bar (6 batang seperti gambar)
     const barCtx = document.getElementById('barStatus');
     if(barCtx){
       barChart = new Chart(barCtx, {
@@ -1032,7 +697,7 @@
         data: {
           labels: @json($barLabels),
           datasets: [{
-            label: '2020',
+            label: 'Semua',
             data: @json($barValues),
             backgroundColor: '#F6C100',
             borderWidth: 0,
@@ -1042,10 +707,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-           animation: {
-    duration: 1800,
-    easing: 'easeOutQuart'
-  },
+          animation: { duration: 1800, easing: 'easeOutQuart' },
           plugins: {
             legend: {
               position: 'bottom',
@@ -1056,19 +718,11 @@
           scales: {
             y: {
               beginAtZero: true,
-              max: 100,
-              ticks: {
-                stepSize: 20,
-                precision: 0,
-                font: { family: 'Nunito', weight: '400', size: 14 }
-              }
+              ticks: { stepSize: 1, precision: 0, font: { family: 'Nunito', weight: '400', size: 14 } }
             },
             x: {
               ticks: {
-                maxRotation: 0,
-                minRotation: 0,
-                autoSkip: false,
-                padding: 6,
+                maxRotation: 0, minRotation: 0, autoSkip: false, padding: 6,
                 font: { family: 'Nunito', weight: '400', size: 11 },
                 callback: function(value){
                   const raw = this.getLabelForValue(value);
@@ -1083,7 +737,7 @@
     }
 
     // =========================
-    // ✅ DETAIL POPUP CONTENT (REALTIME)
+    // ✅ DETAIL POPUP CONTENT
     // =========================
     const metaDonut = document.getElementById('metaDonut');
     const listDonut = document.getElementById('listDonut');
@@ -1102,91 +756,69 @@
       renderDetailTo(detail, metaBar, listBar);
     };
 
-    // first render
     refreshDonutDetail();
     refreshBarDetail();
 
     // =========================
-    // ✅ FILTER LISTENERS: update data + update popup
+    // ✅ FILTER HANDLERS (REAL)
     // =========================
     const fTahun1 = document.getElementById('fTahun1');
     const fTahun2 = document.getElementById('fTahun2');
 
-    const applyDonutFilter = () => {
+    const fPaket = document.getElementById('fTahunPaket');
+    const fNilai = document.getElementById('fTahunNilai');
+    const elPaket = document.getElementById('valPaket');
+    const elNilai = document.getElementById('valNilai');
+
+    const applyPaketNilai = async (tahun) => {
+      const stats = await fetchStats(tahun);
+      if(elPaket){
+        elPaket.setAttribute('data-count', String(stats.paket.count || 0));
+        CountFX.rerunTo(elPaket, stats.paket.count || 0);
+      }
+      if(elNilai){
+        const n = Number(stats.nilai.sum || 0);
+        elNilai.setAttribute('data-count', String(n));
+        CountFX.rerunMoneyTo(elNilai, n);
+      }
+    };
+
+    const applyDonut = async () => {
       if(!donutChart) return;
       const tahun = (fTahun1?.value || '');
-      const key = `${tahun}`;
+      const stats = await fetchStats(tahun);
 
-      const base = @json($statusValues);
-      donutChart.data.datasets[0].data = makeScaled(base, key);
+      donutChart.data.labels = stats.status.labels;
+      donutChart.data.datasets[0].data = stats.status.values;
       donutChart.update();
 
       refreshDonutDetail();
     };
 
-    const applyBarFilter = () => {
+    const applyBar = async () => {
       if(!barChart) return;
       const tahun = (fTahun2?.value || '');
-      const key = `${tahun}`;
+      const stats = await fetchStats(tahun);
 
-      const base = @json($barValues);
-      const next = makeScaled(base, key).map(v => Math.min(100, v));
-      barChart.data.datasets[0].data = next;
+      barChart.data.labels = stats.metode.labels;
+      barChart.data.datasets[0].data = stats.metode.values;
       barChart.data.datasets[0].label = tahun ? String(tahun) : 'Semua';
       barChart.update();
 
       refreshBarDetail();
     };
 
-    if(fTahun1) fTahun1.addEventListener('change', applyDonutFilter);
-    if(fTahun2) fTahun2.addEventListener('change', applyBarFilter);
+    if(fTahun1) fTahun1.addEventListener('change', () => applyDonut().catch(console.error));
+    if(fTahun2) fTahun2.addEventListener('change', () => applyBar().catch(console.error));
+
+    if(fPaket) fPaket.addEventListener('change', () => applyPaketNilai(fPaket.value).catch(console.error));
+    if(fNilai) fNilai.addEventListener('change', () => applyPaketNilai(fNilai.value).catch(console.error));
+
+    // render awal berdasarkan default select (paket/nilai)
+    if(fPaket && fPaket.value) applyPaketNilai(fPaket.value).catch(console.error);
 
     // =========================
-    // ✅ FILTER TAHUN SUMMARY (PAKET & NILAI) - BEKERJA
-    // =========================
-    const fPaket = document.getElementById('fTahunPaket');
-    const fNilai = document.getElementById('fTahunNilai');
-    const elPaket = document.getElementById('valPaket');
-    const elNilai = document.getElementById('valNilai');
-
-    const basePaket = Number(@json($summary[3]['value'])) || 0;
-    const baseNilai = parseRupiah(@json($summary[4]['value']));
-
-    const applyPaketByYear = () => {
-      if(!fPaket || !elPaket) return;
-      const tahun = String(fPaket.value || '');
-      const next = makeScaledSingle(basePaket, `paket__${tahun}`);
-
-      // ✅ update target + animasi
-      elPaket.setAttribute('data-count', String(next));
-      CountFX.rerunTo(elPaket, next);
-
-      // (logic lama)
-      // elPaket.textContent = fmtInt(next);
-    };
-
-    const applyNilaiByYear = () => {
-      if(!fNilai || !elNilai) return;
-      const tahun = String(fNilai.value || '');
-      const next = makeScaledSingle(baseNilai, `nilai__${tahun}`);
-
-      // ✅ update target + animasi rupiah
-      elNilai.setAttribute('data-count', String(next));
-      CountFX.rerunMoneyTo(elNilai, next);
-
-      // (logic lama)
-      // elNilai.textContent = formatRupiah(next);
-    };
-
-    if(fPaket) fPaket.addEventListener('change', applyPaketByYear);
-    if(fNilai) fNilai.addEventListener('change', applyNilaiByYear);
-
-    // render awal sesuai pilihan default (pakai animasi juga)
-    applyPaketByYear();
-    applyNilaiByYear();
-
-    // =========================
-    // ✅ Saat popup dibuka, pastikan konten selalu terbaru
+    // ✅ observer untuk refresh detail saat popover dibuka
     // =========================
     const popDonut = document.getElementById('popDonut');
     const popBar   = document.getElementById('popBar');
@@ -1197,6 +829,7 @@
     });
     if(popDonut) observer.observe(popDonut, { attributes:true, attributeFilter:['class'] });
     if(popBar) observer.observe(popBar, { attributes:true, attributeFilter:['class'] });
+
   });
 </script>
 
