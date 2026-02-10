@@ -137,8 +137,10 @@
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunPaket">
+                {{-- ✅ DEFAULT: Semua Tahun --}}
+                <option value="" selected>Semua Tahun</option>
                 @foreach($tahunOptions as $t)
-                  <option value="{{ $t }}" {{ (isset($defaultYear) && (int)$defaultYear === (int)$t) ? 'selected' : '' }}>{{ $t }}</option>
+                  <option value="{{ $t }}">{{ $t }}</option>
                 @endforeach
               </select>
               <i class="bi bi-chevron-down"></i>
@@ -161,8 +163,10 @@
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunNilai">
+                {{-- ✅ DEFAULT: Semua Tahun --}}
+                <option value="" selected>Semua Tahun</option>
                 @foreach($tahunOptions as $t)
-                  <option value="{{ $t }}" {{ (isset($defaultYear) && (int)$defaultYear === (int)$t) ? 'selected' : '' }}>{{ $t }}</option>
+                  <option value="{{ $t }}">{{ $t }}</option>
                 @endforeach
               </select>
               <i class="bi bi-chevron-down"></i>
@@ -198,7 +202,8 @@
         <div class="u-chart-filters u-chart-filters--one">
           <div class="u-select u-select--full">
             <select id="fTahun1">
-              <option value="">Tahun</option>
+              {{-- ✅ UBAH: Tahun -> Semua Tahun --}}
+              <option value="">Semua Tahun</option>
               @foreach($tahunOptions as $t)
                 <option value="{{ $t }}">{{ $t }}</option>
               @endforeach
@@ -236,7 +241,8 @@
         <div class="u-chart-filters u-chart-filters--one">
           <div class="u-select u-select--full">
             <select id="fTahun2">
-              <option value="">Tahun</option>
+              {{-- ✅ UBAH: Tahun -> Semua Tahun --}}
+              <option value="">Semua Tahun</option>
               @foreach($tahunOptions as $t)
                 <option value="{{ $t }}">{{ $t }}</option>
               @endforeach
@@ -580,7 +586,7 @@
       const total = data.reduce((a,b) => a + (Number(b)||0), 0) || 0;
 
       const metaParts = [];
-      if(opts.tahun !== undefined && opts.tahun !== null) metaParts.push(`Tahun: ${opts.tahun || 'Semua'}`);
+      if(opts.tahun !== undefined && opts.tahun !== null) metaParts.push(`Tahun: ${opts.tahun || 'Semua Tahun'}`);
       metaParts.push(`Total: ${fmtInt(total)}`);
 
       const rows = labels.map((name, i) => {
@@ -822,8 +828,8 @@
     if(fPaket) fPaket.addEventListener('change', () => applyPaketNilai(fPaket.value).catch(console.error));
     if(fNilai) fNilai.addEventListener('change', () => applyPaketNilai(fNilai.value).catch(console.error));
 
-    // render awal berdasarkan default select (paket/nilai)
-    if(fPaket && fPaket.value) applyPaketNilai(fPaket.value).catch(console.error);
+    // ✅ render awal: default "Semua Tahun"
+    if(fPaket) applyPaketNilai(fPaket.value).catch(console.error);
 
     // =========================
     // ✅ observer untuk refresh detail saat popover dibuka
