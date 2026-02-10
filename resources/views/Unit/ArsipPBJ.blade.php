@@ -83,6 +83,9 @@
   $unitOptions = array_values(array_unique(array_map(fn($x) => $x['unit'], $rows)));
   sort($unitOptions);
 
+  // ✅ FIX: lock ke unit yang BENAR-BENAR muncul di tabel (bukan $unitName yang bisa beda format)
+  $lockedUnit = $unitOptions[0] ?? $unitName;
+
   // ✅ Endpoint delete arsip (bulk)
   $bulkDeleteUrl = url('/unit/arsip'); // DELETE /unit/arsip  => unit.arsip.bulkDestroy
 @endphp
@@ -165,12 +168,10 @@
           <input id="apSearchInput" type="text" placeholder="Cari..." />
         </div>
 
-        <div class="ap-select">
+        {{-- ✅ UNIT ROLE: filter unit disembunyikan & otomatis terkunci ke unit yang benar (sesuai data-unit di tabel) --}}
+        <div class="ap-select" style="display:none;">
           <select id="apUnitFilter">
-            <option value="Semua">Semua Unit</option>
-            @foreach($unitOptions as $u)
-              <option value="{{ $u }}">{{ $u }}</option>
-            @endforeach
+            <option value="{{ $lockedUnit }}" selected>{{ $lockedUnit }}</option>
           </select>
           <i class="bi bi-chevron-down"></i>
         </div>
@@ -644,6 +645,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const getRows = () => Array.from(document.querySelectorAll('.ap-row'));
   const getVisibleRows = () => getRows().filter(r => r.style.display !== 'none');
 
+  // ✅ FIX: lock unit pakai nilai yang sama dengan data-unit pada tabel
+  const lockedUnitName = @json($lockedUnit);
+  if (unitEl) unitEl.value = lockedUnitName;
+
   function getCheckedIds(){
     return Array.from(document.querySelectorAll('.ap-row-check:checked'))
       .map(cb => cb.value)
@@ -691,7 +696,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function applyFilters(){
-    const unitVal   = unitEl ? unitEl.value : 'Semua';
+    const unitVal   = unitEl ? unitEl.value : lockedUnitName;
     const statusVal = filterEl ? filterEl.value : 'Semua';
     const yearVal   = yearEl ? yearEl.value : 'Semua';
     const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
@@ -922,44 +927,22 @@ document.addEventListener('DOMContentLoaded', function () {
     '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'
   }[c]));
 
-  async function deleteDocFile({pengadaanId, field, path, cardEl}){
-    if(!pengadaanId || !field || !path) return;
+  // ✅ helper URL untuk file dari storage
+  const normalizeStorageUrl = (p) => {
+    if(!p) return '#';
+    if(String(p).startsWith('http')) return String(p);
+    if(String(p).startsWith('/storage/')) return String(p);
+    return '/storage/' + String(p).replace(/^\/+/, '');
+  };
 
-    const ok = confirm('Hapus file ini?');
-    if(!ok) return;
+  // ✅ PREVIEW fallback (jika raw berupa path string, tanpa url showDokumen)
+  const toPreviewUrl = (storageUrl) => {
+    const u = normalizeStorageUrl(storageUrl);
+    return `/file-viewer?file=${encodeURIComponent(u)}`;
+  };
 
-    try{
-      if(cardEl) cardEl.classList.add('is-deleting');
-
-      const res = await fetch(`/unit/arsip/${pengadaanId}/dokumen`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrf,
-        },
-        body: JSON.stringify({ field, path })
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if(!res.ok){
-        const msg = data?.message || 'Gagal menghapus file.';
-        alert(msg);
-        if(cardEl) cardEl.classList.remove('is-deleting');
-        return;
-      }
-
-      if(cardEl) cardEl.remove();
-
-      const remain = docsEl ? docsEl.querySelectorAll('.dt-doc-card').length : 0;
-      if(emptyEl) emptyEl.hidden = remain > 0;
-
-    }catch(err){
-      alert('Terjadi error saat menghapus file.');
-      if(cardEl) cardEl.classList.remove('is-deleting');
-    }
-  }
+  // ✅ DOWNLOAD (jika ingin)
+  const toDownloadUrl = (storageUrl) => normalizeStorageUrl(storageUrl);
 
   const renderDocs = (raw) => {
     if(!docsEl) return;
@@ -979,63 +962,75 @@ document.addEventListener('DOMContentLoaded', function () {
     groups.forEach(group => {
       const items = Array.isArray(group.items) ? group.items : [];
       items.forEach(item => {
+
+        // ====== CASE: item string path/url ======
         if(typeof item === 'string'){
           const name = item.split('/').filter(Boolean).pop() || item;
-          const url = item.startsWith('http') ? item : (item.startsWith('/storage/') ? item : ('/storage/' + item.replace(/^\/+/,'')));
-          const card = document.createElement('a');
-          card.className = 'dt-doc-card';
-          card.href = url;
-          card.target = '_blank';
-          card.rel = 'noopener';
+          const fileUrl = normalizeStorageUrl(item);
 
-          card.innerHTML = `
-            <div class="dt-doc-ic"><i class="bi bi-file-earmark-arrow-down"></i></div>
-            <div class="dt-doc-info">
-              <div class="dt-doc-title">${safeText(name)}</div>
-              <div class="dt-doc-sub">${safeText(group.field)}</div>
-            </div>
-            <div class="dt-doc-act"><i class="bi bi-download"></i></div>
+          const previewUrl = toPreviewUrl(fileUrl);
+          const downloadUrl = toDownloadUrl(fileUrl);
+
+          const cardWrap = document.createElement('div');
+          cardWrap.className = 'dt-doc-card';
+          cardWrap.style.cursor = 'default';
+
+          cardWrap.innerHTML = `
+            <a href="${safeText(previewUrl)}" target="_blank" rel="noopener"
+              style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;flex:1;min-width:0;">
+              <div class="dt-doc-ic"><i class="bi bi-file-earmark"></i></div>
+              <div class="dt-doc-info">
+                <div class="dt-doc-title">${safeText(name)}</div>
+                <div class="dt-doc-sub">${safeText(group.field)}</div>
+              </div>
+            </a>
+
+            <a class="dt-doc-act" href="${safeText(downloadUrl)}" download title="Download"
+               onclick="event.stopPropagation();">
+              <i class="bi bi-download"></i>
+            </a>
           `;
-          docsEl.appendChild(card);
+
+          docsEl.appendChild(cardWrap);
           return;
         }
 
-        const url  = item?.url || '#';
+        // ====== CASE: item object {url, name, path, label} dari controller ======
+        const url  = item?.url || '';
         const name = item?.name || (item?.path ? String(item.path).split('/').pop() : 'Dokumen');
         const label = item?.label || group.field;
         const path  = item?.path || '';
+
+        /**
+         * ✅ INI FIX UTAMANYA:
+         * - PREVIEW pakai item.url langsung (route unit.arsip.dokumen.show)
+         *   agar showDokumen() yang redirect ke file-viewer,
+         *   jadi TIDAK ADA double-wrap /file-viewer?file=http://.../unit/arsip/...
+         */
+        const previewUrl = url || (path ? toPreviewUrl(path) : '#');
+
+        // download optional: pakai /storage/... dari path (kalau path ada)
+        const downloadUrl = path ? toDownloadUrl(path) : (url || '#');
 
         const cardWrap = document.createElement('div');
         cardWrap.className = 'dt-doc-card';
         cardWrap.style.cursor = 'default';
 
         cardWrap.innerHTML = `
-          <a href="${safeText(url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;flex:1;min-width:0;">
-            <div class="dt-doc-ic"><i class="bi bi-file-earmark-arrow-down"></i></div>
+          <a href="${safeText(previewUrl)}" target="_blank" rel="noopener"
+             style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;flex:1;min-width:0;">
+            <div class="dt-doc-ic"><i class="bi bi-file-earmark"></i></div>
             <div class="dt-doc-info">
               <div class="dt-doc-title">${safeText(name)}</div>
               <div class="dt-doc-sub">${safeText(label)}</div>
             </div>
-            <div class="dt-doc-act"><i class="bi bi-download"></i></div>
           </a>
-          <button type="button" class="dt-doc-del" title="Hapus file">
-            <i class="bi bi-trash3"></i>
-          </button>
-        `;
 
-        const delBtn = cardWrap.querySelector('.dt-doc-del');
-        if(delBtn){
-          delBtn.addEventListener('click', function(ev){
-            ev.preventDefault();
-            ev.stopPropagation();
-            deleteDocFile({
-              pengadaanId: currentPengadaanId,
-              field: group.field,
-              path: path,
-              cardEl: cardWrap
-            });
-          });
-        }
+          <a class="dt-doc-act" href="${safeText(downloadUrl)}" download title="Download"
+             onclick="event.stopPropagation();">
+            <i class="bi bi-download"></i>
+          </a>
+        `;
 
         docsEl.appendChild(cardWrap);
       });

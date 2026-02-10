@@ -81,69 +81,51 @@ Route::middleware('auth')->group(function () {
         return redirect()->route('home');
     })->name('dashboard');
 
+    /**
+     * ✅ FILE VIEWER (UNTUK UNIT & PPK)
+     * GET /file-viewer?file=...
+     * (Controller sudah anti double-wrap + validasi /storage)
+     */
+    Route::get('/file-viewer', [UnitController::class, 'fileViewer'])
+        ->name('file.viewer');
+
     /*
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
     | UNIT ROUTES
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
     */
     Route::prefix('unit')->name('unit.')->group(function () {
 
-        // Dashboard Unit
         Route::get('/dashboard', [UnitController::class, 'dashboard'])
             ->name('dashboard');
 
-        /**
-         * ✅ API Dashboard Unit (AJAX)
-         * dipakai untuk filter tahun summary + chart
-         * GET /unit/dashboard/stats?tahun=2025
-         */
         Route::get('/dashboard/stats', [UnitController::class, 'dashboardStats'])
             ->name('dashboard.stats');
 
-        /**
-         * (opsional) jika sebelumnya sudah pakai /dashboard/data
-         * GET /unit/dashboard/data?tahun=2025
-         */
         Route::get('/dashboard/data', [UnitController::class, 'dashboardStats'])
             ->name('dashboard.data');
 
-        /**
-         * ✅ Arsip Unit (utama)
-         * GET /unit/arsip
-         */
         Route::get('/arsip', [UnitController::class, 'arsipIndex'])
             ->name('arsip');
 
-        /**
-         * ✅ Alias rute lama
-         */
         Route::get('/arsippbj', [UnitController::class, 'arsipIndex'])
             ->name('arsippbj');
 
         Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])
             ->name('arsip.pbj');
 
-        /**
-         * ✅ Edit & Update arsip
-         */
         Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])
             ->name('arsip.edit');
 
         Route::put('/arsip/{id}', [UnitController::class, 'arsipUpdate'])
             ->name('arsip.update');
 
-        /**
-         * ✅ Hapus arsip
-         */
         Route::delete('/arsip', [UnitController::class, 'arsipBulkDestroy'])
             ->name('arsip.bulkDestroy');
 
         Route::delete('/arsip/{id}', [UnitController::class, 'arsipDestroy'])
             ->name('arsip.destroy');
 
-        /**
-         * ✅ Tambah Pengadaan
-         */
         Route::get('/pengadaan/tambah', [UnitController::class, 'pengadaanCreate'])
             ->name('pengadaan.create');
 
@@ -151,27 +133,18 @@ Route::middleware('auth')->group(function () {
             ->name('pengadaan.store');
 
         /**
-         * ✅ Lihat/Download dokumen via controller
+         * ✅ LIHAT dokumen (INLINE) -> showDokumen akan redirect ke file.viewer dengan /storage/...
          */
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [UnitController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
             ->name('arsip.dokumen.show');
 
-        /**
-         * ✅ Hapus dokumen file
-         */
         Route::delete('/arsip/{id}/dokumen', [UnitController::class, 'hapusDokumenFile'])
             ->name('arsip.dokumen.hapus');
 
-        /**
-         * (opsional) endpoint download lama
-         */
         Route::get('/arsip/{id}/dokumen-download', [UnitController::class, 'downloadDokumen'])
             ->name('arsip.dokumen.download');
 
-        /**
-         * ✅ Kelola akun Unit
-         */
         Route::get('/kelola-akun', [UnitController::class, 'kelolaAkun'])
             ->name('kelola.akun');
 
@@ -179,11 +152,10 @@ Route::middleware('auth')->group(function () {
             ->name('akun.update');
     });
 
-
     /*
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
     | PPK ROUTES
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
     */
     Route::prefix('ppk')->name('ppk.')->group(function () {
 
@@ -205,6 +177,10 @@ Route::middleware('auth')->group(function () {
         Route::post('/pengadaan/store', [PpkController::class, 'pengadaanStore'])
             ->name('pengadaan.store');
 
+        /**
+         * ✅ LIHAT dokumen PPK
+         * PpkController@showDokumen juga harus redirect ke route('file.viewer', ['file' => '/storage/...'])
+         */
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [PpkController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
             ->name('arsip.dokumen.show');

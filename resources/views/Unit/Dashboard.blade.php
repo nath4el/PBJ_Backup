@@ -403,6 +403,9 @@
     // ✅ FIX: route yang benar sesuai web.php kamu
     const STATS_URL = @json(route('unit.dashboard.data'));
 
+    // ✅ LOCK ke unit login (agar fetch data dashboard selalu per-unit)
+    const lockedUnitName = @json($unitName);
+
     // =========================
     // ✅ COUNT-UP ANIMATION (tetap)
     // =========================
@@ -636,11 +639,16 @@
     // =========================
     const cache = {};
     const fetchStats = async (tahun) => {
-      const key = (tahun === null || tahun === undefined) ? '' : String(tahun);
+      const key = `${String(lockedUnitName || '')}__${(tahun === null || tahun === undefined) ? '' : String(tahun)}`;
       if (cache[key]) return cache[key];
 
       const url = new URL(STATS_URL, window.location.origin);
-      if (key !== '') url.searchParams.set('tahun', key);
+
+      // ✅ selalu kirim unit login -> data per-unit
+      url.searchParams.set('unit', String(lockedUnitName || ''));
+
+      const tahunKey = (tahun === null || tahun === undefined) ? '' : String(tahun);
+      if (tahunKey !== '') url.searchParams.set('tahun', tahunKey);
 
       const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
       if (!res.ok) throw new Error('Gagal memuat data dashboard');
