@@ -41,7 +41,14 @@
   // list unit fallback (kalau unit_id kosong)
   $unitOptions  = ["Fakultas Teknik", "Fakultas Hukum", "Fakultas Ekonomi dan Bisnis"];
 
-  $jenisPengadaanOptions = ["Tender", "E-Katalog", "Pengadaan Langsung", "Seleksi", "Penunjukan Langsung"];
+  $jenisPengadaanOptions = [
+    "Pengadaan Langsung",
+    "Penunjukan Langsung",
+    "E-Purchasing / E-Catalog",
+    "Tender Terbatas",
+    "Tender Terbuka",
+    "Swakelola",
+  ];
   $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 @endphp
 
