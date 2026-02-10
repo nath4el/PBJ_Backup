@@ -21,12 +21,26 @@
 {{-- ✅ Tambah 1 class khusus page ini biar CSS inline TIDAK ngubah UI page lain --}}
 <body class="dash-body page-unit-tp">
 @php
-  // dummy frontend (nanti backend tinggal ganti)
-  $unitName = "Fakultas Teknik";
+  // Nama yang tampil di sidebar (fallback)
+  $unitName = $unitName ?? (auth()->user()->name ?? 'Unit Kerja');
 
-  // opsi dummy dropdown
+  // Unit default dari akun login (role unit)
+  $selectedUnitId = $selectedUnitId ?? (auth()->check() ? auth()->user()->unit_id : null);
+  $selectedUnitName = $selectedUnitName ?? null;
+
+  // Fallback ambil nama unit dari DB bila perlu
+  if (empty($selectedUnitName) && !empty($selectedUnitId)) {
+    try {
+      $selectedUnitName = \App\Models\Unit::find($selectedUnitId)?->nama;
+    } catch (\Throwable $e) {}
+  }
+
+  // opsi dropdown
   $tahunOptions = [2022, 2023, 2024, 2025, 2026];
+
+  // list unit fallback (kalau unit_id kosong)
   $unitOptions  = ["Fakultas Teknik", "Fakultas Hukum", "Fakultas Ekonomi dan Bisnis"];
+
   $jenisPengadaanOptions = ["Tender", "E-Katalog", "Pengadaan Langsung", "Seleksi", "Penunjukan Langsung"];
   $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 @endphp
@@ -121,12 +135,23 @@
               <div class="tp-field">
                 <label class="tp-label">Unit Kerja</label>
                 <div class="tp-control">
+                  @if(auth()->check() && auth()->user()->role === 'unit')
+                  {{-- ✅ ROLE UNIT: unit otomatis dari akun (tidak bisa diganti) --}}
+                  <select name="unit_kerja" class="tp-select" disabled>
+                    <option value="{{ $selectedUnitName ?? $unitName }}" selected>{{ $selectedUnitName ?? $unitName }}</option>
+                  </select>
+                  {{-- karena disabled tidak ikut terkirim saat submit --}}
+                  <input type="hidden" name="unit_id" value="{{ $selectedUnitId ?? auth()->user()->unit_id }}">
+                  <input type="hidden" name="unit_kerja" value="{{ $selectedUnitName ?? $unitName }}">
+                @else
+                  {{-- fallback / jika bukan role unit: tetap bisa pilih --}}
                   <select name="unit_kerja" class="tp-select" required>
-                    <option value="" selected disabled hidden>Fakultas</option>
+                    <option value="" selected disabled hidden>Pilih Unit</option>
                     @foreach($unitOptions as $u)
                       <option value="{{ $u }}">{{ $u }}</option>
                     @endforeach
                   </select>
+                @endif
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
@@ -2175,153 +2200,197 @@
       return mb.toFixed(1) + ' MB';
     };
 
-    // MULTI FILE APPEND + remove X
-    document.querySelectorAll('.tp-acc-item').forEach(item => {
-      const fileInput = item.querySelector('input[type="file"]');
-      const zone = item.querySelector('.tp-dropzone');
-      if(!fileInput || !zone) return;
+    // MULTI FILE APPEND + remove X (SAFE: cancel tidak menghapus file lama)
+document.querySelectorAll('.tp-acc-item').forEach(item => {
+  const fileInput = item.querySelector('input[type="file"]'); // input asli (buat submit)
+  const zone = item.querySelector('.tp-dropzone');
+  if(!fileInput || !zone) return;
 
-      const title = zone.querySelector('.tp-drop-title');
-      const sub = zone.querySelector('.tp-drop-sub');
-      const btn = zone.querySelector('.tp-drop-btn');
+  const title = zone.querySelector('.tp-drop-title');
+  const sub   = zone.querySelector('.tp-drop-sub');
+  const btn   = zone.querySelector('.tp-drop-btn');
 
-      const previewWrap = zone.querySelector('.tp-preview-wrap');
-      const previewList = zone.querySelector('.tp-preview-list');
+  if(title && !title.dataset.defaultText) title.dataset.defaultText = title.textContent.trim();
+  if(sub   && !sub.dataset.defaultText)   sub.dataset.defaultText   = sub.textContent.trim();
+  if(btn   && !btn.dataset.defaultText)   btn.dataset.defaultText   = btn.textContent.trim();
 
-      // ✅ elemen text tipis di header
-      const headCount = item.querySelector('.tp-acc-count');
+  const previewWrap = zone.querySelector('.tp-preview-wrap');
+  const previewList = zone.querySelector('.tp-preview-list');
+  const headCount   = item.querySelector('.tp-acc-count');
 
-      let storedFiles = [];
-      const fileKey = (f) => `${f.name}__${f.size}__${f.lastModified}`;
+  let storedFiles = [];
+  const fileKey = (f) => `${f.name}__${f.size}__${f.lastModified}`;
 
-      const rebuildInputFiles = () => {
-        const dt = new DataTransfer();
-        storedFiles.forEach(f => dt.items.add(f));
-        fileInput.files = dt.files;
-      };
+  const rebuildInputFiles = () => {
+    const dt = new DataTransfer();
+    storedFiles.forEach(f => dt.items.add(f));
+    fileInput.files = dt.files;
+  };
 
-      const clearPreview = () => {
-        if(previewList) previewList.innerHTML = '';
-        if(previewWrap) previewWrap.hidden = true;
-      };
+  const clearPreview = () => {
+    if(previewList) previewList.innerHTML = '';
+    if(previewWrap) previewWrap.hidden = true;
+  };
 
-      const renderPreview = () => {
-        clearPreview();
-        if(!previewList) return;
+  const getIconHtml = (file) => {
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    if(type.startsWith('image/')) return '<i class="bi bi-image"></i>';
+    if(name.endsWith('.pdf')) return '<i class="bi bi-file-earmark-pdf"></i>';
+    if(name.endsWith('.doc') || name.endsWith('.docx')) return '<i class="bi bi-file-earmark-word"></i>';
+    if(name.endsWith('.xls') || name.endsWith('.xlsx') || name.endsWith('.csv')) return '<i class="bi bi-file-earmark-excel"></i>';
+    if(name.endsWith('.ppt') || name.endsWith('.pptx')) return '<i class="bi bi-file-earmark-ppt"></i>';
+    return '<i class="bi bi-file-earmark"></i>';
+  };
 
-        storedFiles.forEach((file) => {
-          const row = document.createElement('div');
-          row.className = 'tp-preview-item';
+  const formatSize = (bytes) => {
+    if(bytes < 1024) return bytes + ' B';
+    const kb = bytes / 1024;
+    if(kb < 1024) return kb.toFixed(1) + ' KB';
+    const mb = kb / 1024;
+    return mb.toFixed(1) + ' MB';
+  };
 
-          const left = document.createElement('div');
-          left.className = 'tp-preview-left';
+  const renderPreview = () => {
+    clearPreview();
+    if(!previewList) return;
 
-          const thumb = document.createElement('div');
-          thumb.className = 'tp-preview-thumb';
+    storedFiles.forEach((file) => {
+      const row = document.createElement('div');
+      row.className = 'tp-preview-item';
 
-          const type = (file.type || '').toLowerCase();
-          if(type.startsWith('image/')){
-            const img = document.createElement('img');
-            img.alt = file.name || 'preview';
-            img.src = URL.createObjectURL(file);
-            img.onload = () => { try{ URL.revokeObjectURL(img.src); }catch(e){} };
-            thumb.appendChild(img);
-          } else {
-            thumb.innerHTML = getIconHtml(file);
-          }
+      const left = document.createElement('div');
+      left.className = 'tp-preview-left';
 
-          const info = document.createElement('div');
-          info.className = 'tp-preview-info';
+      const thumb = document.createElement('div');
+      thumb.className = 'tp-preview-thumb';
 
-          const name = document.createElement('div');
-          name.className = 'tp-preview-name';
-          name.textContent = file.name || 'Dokumen';
+      const type = (file.type || '').toLowerCase();
+      if(type.startsWith('image/')){
+        const img = document.createElement('img');
+        img.alt = file.name || 'preview';
+        img.src = URL.createObjectURL(file);
+        img.onload = () => { try{ URL.revokeObjectURL(img.src); }catch(e){} };
+        thumb.appendChild(img);
+      } else {
+        thumb.innerHTML = getIconHtml(file);
+      }
 
-          const meta = document.createElement('div');
-          meta.className = 'tp-preview-meta';
-          meta.textContent = formatSize(file.size);
+      const info = document.createElement('div');
+      info.className = 'tp-preview-info';
 
-          info.appendChild(name);
-          info.appendChild(meta);
+      const name = document.createElement('div');
+      name.className = 'tp-preview-name';
+      name.textContent = file.name || 'Dokumen';
 
-          left.appendChild(thumb);
-          left.appendChild(info);
+      const meta = document.createElement('div');
+      meta.className = 'tp-preview-meta';
+      meta.textContent = formatSize(file.size);
 
-          const removeBtn = document.createElement('button');
-          removeBtn.type = 'button';
-          removeBtn.className = 'tp-preview-remove';
-          removeBtn.setAttribute('aria-label', 'Hapus file');
-          removeBtn.dataset.key = fileKey(file);
-          removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+      info.appendChild(name);
+      info.appendChild(meta);
 
-          removeBtn.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            const k = removeBtn.dataset.key;
-            storedFiles = storedFiles.filter(f => fileKey(f) !== k);
-            rebuildInputFiles();
-            syncUI();
-          });
+      left.appendChild(thumb);
+      left.appendChild(info);
 
-          row.appendChild(left);
-          row.appendChild(removeBtn);
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'tp-preview-remove';
+      removeBtn.setAttribute('aria-label', 'Hapus file');
+      removeBtn.dataset.key = fileKey(file);
+      removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
 
-          previewList.appendChild(row);
-        });
-
-        if(previewWrap) previewWrap.hidden = (storedFiles.length === 0);
-      };
-
-      const syncUI = () => {
-        const hasFile = storedFiles.length > 0;
-        item.classList.toggle('has-file', hasFile);
-
-        // ✅ text tipis di header sesi: "2 file sudah terupload"
-        if(headCount){
-          if(hasFile){
-            const n = storedFiles.length;
-            headCount.textContent = (n === 1) ? '1 file sudah terupload' : (n + ' file sudah terupload');
-            headCount.hidden = false;
-          } else {
-            headCount.textContent = '';
-            headCount.hidden = true;
-          }
-        }
-
-        if(hasFile){
-          if(title) title.textContent = storedFiles.length === 1 ? storedFiles[0].name : (storedFiles.length + ' file dipilih');
-          if(sub) sub.textContent = 'File dipilih';
-          if(btn) btn.textContent = 'Tambah File';
-          renderPreview();
-        } else {
-          if(title && title.dataset.defaultText) title.textContent = title.dataset.defaultText;
-          if(sub && sub.dataset.defaultText) sub.textContent = sub.dataset.defaultText;
-          if(btn && btn.dataset.defaultText) btn.textContent = btn.dataset.defaultText;
-          clearPreview();
-        }
-      };
-
-      fileInput.addEventListener('change', () => {
-        const picked = (fileInput.files && fileInput.files.length) ? Array.from(fileInput.files) : [];
-        if(picked.length){
-          const existing = new Set(storedFiles.map(fileKey));
-          picked.forEach(f => {
-            const k = fileKey(f);
-            if(!existing.has(k)){
-              storedFiles.push(f);
-              existing.add(k);
-            }
-          });
-          rebuildInputFiles();
-        }
-        fileInput.value = '';
+      removeBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const k = removeBtn.dataset.key;
+        storedFiles = storedFiles.filter(f => fileKey(f) !== k);
+        rebuildInputFiles();
         syncUI();
       });
 
-      storedFiles = [];
-      rebuildInputFiles();
-      syncUI();
+      row.appendChild(left);
+      row.appendChild(removeBtn);
+      previewList.appendChild(row);
     });
+
+    if(previewWrap) previewWrap.hidden = (storedFiles.length === 0);
+  };
+
+  const syncUI = () => {
+    const hasFile = storedFiles.length > 0;
+    item.classList.toggle('has-file', hasFile);
+
+    if(headCount){
+      if(hasFile){
+        const n = storedFiles.length;
+        headCount.textContent = (n === 1) ? '1 file sudah terupload' : (n + ' file sudah terupload');
+        headCount.hidden = false;
+      } else {
+        headCount.textContent = '';
+        headCount.hidden = true;
+      }
+    }
+
+    if(hasFile){
+      if(title) title.textContent = storedFiles.length === 1 ? storedFiles[0].name : (storedFiles.length + ' file dipilih');
+      if(sub) sub.textContent = 'File dipilih';
+      if(btn) btn.textContent = 'Tambah File';
+      renderPreview();
+    } else {
+      if(title && title.dataset.defaultText) title.textContent = title.dataset.defaultText;
+      if(sub && sub.dataset.defaultText) sub.textContent = sub.dataset.defaultText;
+      if(btn && btn.dataset.defaultText) btn.textContent = btn.dataset.defaultText;
+      clearPreview();
+    }
+  };
+
+  // ✅ picker aman: pakai input sementara (cancel tidak menghapus file lama)
+  const openPicker = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const tmp = document.createElement('input');
+    tmp.type = 'file';
+    tmp.multiple = fileInput.multiple; // ikut multiple
+    tmp.accept = fileInput.accept || ''; // ikut accept jika ada
+    tmp.style.display = 'none';
+
+    tmp.addEventListener('change', () => {
+      const picked = tmp.files ? Array.from(tmp.files) : [];
+      if(picked.length){
+        const existing = new Set(storedFiles.map(fileKey));
+        picked.forEach(f => {
+          const k = fileKey(f);
+          if(!existing.has(k)){
+            storedFiles.push(f);
+            existing.add(k);
+          }
+        });
+        rebuildInputFiles();
+        syncUI();
+      }
+      tmp.remove();
+    });
+
+    document.body.appendChild(tmp);
+    tmp.click();
+  };
+
+  if(btn) btn.addEventListener('click', openPicker);
+
+  zone.addEventListener('click', (ev) => {
+    if (ev.target.closest('.tp-preview-remove')) return;
+    openPicker(ev);
+  });
+
+  // init
+  storedFiles = [];
+  rebuildInputFiles();
+  syncUI();
+});
+
+
 
     /* =========================================================
        E. Dokumen Tidak Dipersyaratkan

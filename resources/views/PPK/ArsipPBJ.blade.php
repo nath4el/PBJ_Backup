@@ -187,10 +187,9 @@
       </a>
 
       <a class="dash-link {{ request()->routeIs('ppk.kelola.akun') ? 'active' : '' }}" href="{{ route('ppk.kelola.akun') }}">
-  <span class="ic"><i class="bi bi-person-gear"></i></span>
-  Kelola Akun
-</a>
-
+        <span class="ic"><i class="bi bi-person-gear"></i></span>
+        Kelola Akun
+      </a>
     </nav>
 
     <div class="dash-side-actions">
@@ -425,134 +424,142 @@
 
   <div class="dt-panel" role="dialog" aria-modal="true" aria-labelledby="dtTitle">
     <div class="dt-card">
-      <button type="button" class="dt-close-inside" id="dtCloseBtn" aria-label="Tutup">
-        <i class="bi bi-x-lg"></i>
-      </button>
 
-      <div class="dt-title" id="dtTitle">-</div>
+      {{-- ✅ TOPBAR (komponen baru, isi tetap) --}}
+      <div class="dt-topbar">
+        <div class="dt-title" id="dtTitle">-</div>
 
-      <div class="dt-info-grid">
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-envelope"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Unit Kerja</div>
-            <div class="dt-val" id="dtUnit">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-calendar-event"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Tahun Anggaran</div>
-            <div class="dt-val" id="dtTahun">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-person-badge"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">ID RUP</div>
-            <div class="dt-val" id="dtIdRup">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-folder2"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Status Pekerjaan</div>
-            <div class="dt-val" id="dtStatus">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-person"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Nama Rekanan</div>
-            <div class="dt-val" id="dtRekanan">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-box"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Jenis Pengadaan</div>
-            <div class="dt-val" id="dtJenis">-</div>
-          </div>
-        </div>
+        <button type="button" class="dt-close-inside" id="dtCloseBtn" aria-label="Tutup">
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
-      <div class="dt-divider"></div>
+      {{-- ✅ BODY scroll (isi tetap) --}}
+      <div class="dt-body">
 
-      <div class="dt-section-title">Informasi Anggaran</div>
-
-      <div class="dt-budget-grid">
-        <div class="dt-budget">
-          <div class="dt-label">Pagu Anggaran</div>
-          <div class="dt-money" id="dtPagu">-</div>
-        </div>
-
-        <div class="dt-budget">
-          <div class="dt-label">HPs</div>
-          <div class="dt-money" id="dtHps">-</div>
-        </div>
-
-        <div class="dt-budget">
-          <div class="dt-label">Nilai Kontrak</div>
-          <div class="dt-money" id="dtKontrak">-</div>
-        </div>
-      </div>
-
-      <div class="dt-divider"></div>
-
-      <div class="dt-section-title">Dokumen Pengadaan</div>
-
-      <div class="dt-doc-grid">
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+        <div class="dt-info-grid">
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-envelope"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Unit Kerja</div>
+              <div class="dt-val" id="dtUnit">-</div>
             </div>
-          @endfor
-        </div>
+          </div>
 
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-calendar-event"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Tahun Anggaran</div>
+              <div class="dt-val" id="dtTahun">-</div>
             </div>
-          @endfor
-        </div>
+          </div>
 
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-person-badge"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">ID RUP</div>
+              <div class="dt-val" id="dtIdRup">-</div>
             </div>
-          @endfor
-        </div>
-      </div>
+          </div>
 
-      {{-- ✅✅ TAMBAHAN (KOLOM E) — TARUH DI BAWAH LIST DOKUMEN --}}
-      <div class="dt-doc-note" id="dtDocNoteWrap" hidden>
-        <div class="dt-doc-note-ic"><i class="bi bi-info-circle"></i></div>
-        <div class="dt-doc-note-txt">
-          <div class="dt-doc-note-title">Dokumen tidak dipersyaratkan</div>
-          <div class="dt-doc-note-desc" id="dtDocNote">-</div>
-        </div>
-      </div>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-folder2"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Status Pekerjaan</div>
+              <div class="dt-val" id="dtStatus">-</div>
+            </div>
+          </div>
 
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-person"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Nama Rekanan</div>
+              <div class="dt-val" id="dtRekanan">-</div>
+            </div>
+          </div>
+
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-box"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Jenis Pengadaan</div>
+              <div class="dt-val" id="dtJenis">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dt-divider"></div>
+
+        <div class="dt-section-title">Informasi Anggaran</div>
+
+        <div class="dt-budget-grid">
+          <div class="dt-budget">
+            <div class="dt-label">Pagu Anggaran</div>
+            <div class="dt-money" id="dtPagu">-</div>
+          </div>
+
+          <div class="dt-budget">
+            <div class="dt-label">HPs</div>
+            <div class="dt-money" id="dtHps">-</div>
+          </div>
+
+          <div class="dt-budget">
+            <div class="dt-label">Nilai Kontrak</div>
+            <div class="dt-money" id="dtKontrak">-</div>
+          </div>
+        </div>
+
+        <div class="dt-divider"></div>
+
+        <div class="dt-section-title">Dokumen Pengadaan</div>
+
+        <div class="dt-doc-grid">
+          <div class="dt-doc-col">
+            @for($i=0;$i<4;$i++)
+              <div class="dt-doc-item">
+                <div class="dt-doc-left">
+                  <i class="bi bi-file-earmark-text"></i>
+                  <span>Dokumen RUP</span>
+                </div>
+                <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+              </div>
+            @endfor
+          </div>
+
+          <div class="dt-doc-col">
+            @for($i=0;$i<4;$i++)
+              <div class="dt-doc-item">
+                <div class="dt-doc-left">
+                  <i class="bi bi-file-earmark-text"></i>
+                  <span>Dokumen RUP</span>
+                </div>
+                <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+              </div>
+            @endfor
+          </div>
+
+          <div class="dt-doc-col">
+            @for($i=0;$i<4;$i++)
+              <div class="dt-doc-item">
+                <div class="dt-doc-left">
+                  <i class="bi bi-file-earmark-text"></i>
+                  <span>Dokumen RUP</span>
+                </div>
+                <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+              </div>
+            @endfor
+          </div>
+        </div>
+
+        {{-- ✅✅ TAMBAHAN (KOLOM E) — TARUH DI BAWAH LIST DOKUMEN --}}
+        <div class="dt-doc-note" id="dtDocNoteWrap" hidden>
+          <div class="dt-doc-note-ic"><i class="bi bi-info-circle"></i></div>
+          <div class="dt-doc-note-txt">
+            <div class="dt-doc-note-title">Dokumen tidak dipersyaratkan</div>
+            <div class="dt-doc-note-desc" id="dtDocNote">-</div>
+          </div>
+        </div>
+
+      </div> {{-- /dt-body --}}
     </div>
   </div>
 </div>
@@ -828,7 +835,8 @@
   }
 
   /* =========================
-     POPUP (tetap)
+     POPUP (UPDATED)
+     - komponen topbar + blur + backdrop gelap
   ========================= */
   .page-arsip .dt-modal{
     position: fixed;
@@ -840,60 +848,69 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 8px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    padding: 10px;
   }
 
   .page-arsip .dt-backdrop{
     position: fixed;
     inset: 0;
+    background: rgba(15, 23, 42, .35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   .page-arsip .dt-panel{
-    width: min(1440px, 98vw) !important;
-    max-height: calc(100vh - 12px) !important;
+    width: min(1440px, 96vw) !important;
+    max-height: calc(100vh - 20px) !important;
     display: flex;
     position: relative;
     z-index: 1;
-
     border-radius: 24px !important;
     overflow: hidden;
   }
 
   .page-arsip .dt-card{
     width: 100%;
-    display: block;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
-
     border-radius: 24px !important;
     background: #fff;
+    overflow: hidden;
   }
 
-  .page-arsip .dt-card::-webkit-scrollbar{ width: 10px; }
-  .page-arsip .dt-card::-webkit-scrollbar-track{
-    border-radius: 24px;
-    background: transparent;
-    margin: 10px 0;
+  .page-arsip .dt-topbar{
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #fff;
+    padding: 18px 18px 12px;
+    border-bottom: 1px solid #eef3f6;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
   }
-  .page-arsip .dt-card::-webkit-scrollbar-thumb{
-    border-radius: 24px;
-    background: rgba(15, 23, 42, .18);
+
+  .page-arsip .dt-topbar .dt-title{
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    transform: translate(6px, -8px) !important;
   }
 
   .page-arsip .dt-close-inside{
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    z-index: 2;
+     margin-top: -8px;
+    flex: 0 0 auto;
     width: 44px;
     height: 44px;
     border-radius: 16px;
     display:grid;
     place-items:center;
     padding:0;
+    position: static;
   }
   .page-arsip .dt-close-inside i{
     display:block;
@@ -901,9 +918,27 @@
     font-size: 18px;
   }
 
-  .page-arsip .dt-title{
-    position: static;
+.page-arsip .dt-topbar .dt-close-inside{
+  transform: translate(6px, -8px) !important;
+}
+
+
+  .page-arsip .dt-body{
+    padding: 16px 18px 18px;
+    overflow-y: auto;
+    min-height: 0;
+    overscroll-behavior: contain;
+  }
+
+  .page-arsip .dt-body::-webkit-scrollbar{ width: 10px; }
+  .page-arsip .dt-body::-webkit-scrollbar-track{
+    border-radius: 24px;
     background: transparent;
+    margin: 10px 0;
+  }
+  .page-arsip .dt-body::-webkit-scrollbar-thumb{
+    border-radius: 24px;
+    background: rgba(15, 23, 42, .18);
   }
 
   /* ✅✅ NOTE KOLOM E (TAMPIL DI BAWAH DOKUMEN) */

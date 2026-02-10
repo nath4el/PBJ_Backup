@@ -4,12 +4,13 @@ namespace App\Http\Controllers\PPK;
 
 use App\Http\Controllers\Controller;
 use App\Models\Pengadaan;
+use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class PpkController extends Controller
 {
@@ -35,23 +36,55 @@ class PpkController extends Controller
         // 1) Coba ambil dari DB
         // =========================
         try {
-            // kalau tabel/kolom ada dan sudah jalan, ini akan kepakai
-            $query = Pengadaan::query()->latest();
-
-            // OPTIONAL: kalau mau filter/search nanti bisa ditambah di sini
+            // eager load unit untuk tampilkan nama unit di arsip
+            $query = Pengadaan::with('unit')->latest();
 
             $dbPaginated = $query->paginate(10)->withQueryString();
 
-            // Kalau ada data DB, langsung pakai
             if ($dbPaginated->total() > 0) {
-                // pastikan itemnya bisa dipakai blade yang sebelumnya pakai array field
-                // kalau blade kamu pakai ->judul, ->tahun, dst, ini sudah oke
-                $arsips = $dbPaginated;
+                // Mapping ke bentuk yang sama seperti dummy agar blade tidak perlu diubah
+                $mapped = $dbPaginated->getCollection()->map(function ($p) {
+                    return [
+                        'id' => $p->id,
 
+                        // blade dummy pakai "judul", kita isi dari "nama_pekerjaan"
+                        'judul' => $p->nama_pekerjaan ?? '-',
+                        'tahun' => $p->tahun ?? null,
+
+                        // blade dummy pakai metode & status
+                        // metode kita mapping dari jenis_pengadaan
+                        'metode' => $p->jenis_pengadaan ?? '-',
+                        'status' => $p->status_pekerjaan ?? '-',
+
+                        // angka rupiah di DB integer -> tampilin string rupiah
+                        'nilai_kontrak' => $this->formatRupiah($p->nilai_kontrak),
+
+                        // tambahan detail yang dipakai dummy view
+                        'unit' => $p->unit?->nama ?? '-',
+                        'status_arsip' => $p->status_arsip ?? '-',
+                        'idrup' => $p->id_rup ?? '-',
+                        'rekanan' => $p->nama_rekanan ?? '-',
+                        'jenis' => $p->jenis_pengadaan ?? '-',
+                        'pagu' => $this->formatRupiah($p->pagu_anggaran),
+                        'hps' => $this->formatRupiah($p->hps),
+
+                        // dokumen_tidak_dipersyaratkan di DB jsonb -> tampilkan teks ringkas
+                        'dokumen_tidak_dipersyaratkan' => is_array($p->dokumen_tidak_dipersyaratkan)
+                            ? (count($p->dokumen_tidak_dipersyaratkan) > 0
+                                ? 'Ada dokumen pendukung (opsional).'
+                                : 'Tidak ada dokumen pendukung.')
+                            : 'Tidak ada dokumen pendukung.',
+                    ];
+                });
+
+                // Ganti collection paginator -> tetap paginator, tapi itemnya array dummy-shape
+                $dbPaginated->setCollection($mapped);
+
+                $arsips = $dbPaginated;
                 return view('PPK.ArsipPBJ', compact('ppkName', 'arsips'));
             }
         } catch (\Throwable $e) {
-            // kalau DB belum siap (tabel belum ada / kolom beda), kita fallback ke dummy
+            // fallback dummy
         }
 
         // =========================
@@ -299,8 +332,8 @@ class PpkController extends Controller
     }
 
     /**
-     * Edit Arsip
-     * - coba ambil dari DB
+     * Edit Arsip (PPK)
+     * - ambil dari DB kalau ada
      * - fallback dummy
      */
     public function arsipEdit($id)
@@ -308,21 +341,21 @@ class PpkController extends Controller
         $ppkName = auth()->user()->name ?? "PPK Utama";
 
         try {
-            $pengadaan = Pengadaan::find($id);
+            $pengadaan = Pengadaan::with('unit')->find($id);
             if ($pengadaan) {
-                // mapping minimal yang biasa dipakai blade edit kamu
+                // mapping minimal yang dipakai blade edit kamu (judul, tahun, metode, status)
                 $arsip = (object) [
                     'id' => $pengadaan->id,
-                    'judul' => $pengadaan->nama_pengadaan ?? ($pengadaan->judul ?? 'Pengadaan'),
-                    'tahun' => $pengadaan->tahun_anggaran ?? ($pengadaan->tahun ?? date('Y')),
-                    'metode' => $pengadaan->metode_pengadaan ?? ($pengadaan->metode ?? '-'),
-                    'status' => $pengadaan->status ?? '-',
+                    'judul' => $pengadaan->nama_pekerjaan ?? '-',
+                    'tahun' => $pengadaan->tahun ?? (int)date('Y'),
+                    'metode' => $pengadaan->jenis_pengadaan ?? '-',
+                    'status' => $pengadaan->status_pekerjaan ?? '-',
                 ];
 
                 return view('PPK.EditArsip', compact('ppkName', 'arsip'));
             }
         } catch (\Throwable $e) {
-            // ignore, fallback dummy
+            // fallback dummy
         }
 
         $arsip = (object) [
@@ -337,15 +370,14 @@ class PpkController extends Controller
     }
 
     /**
-     * Update Arsip
-     * - coba update DB kalau ada record Pengadaan
-     * - fallback dummy redirect
+     * Update Arsip (PPK)
+     * - update DB (kolom baru)
      */
     public function arsipUpdate(Request $request, $id)
     {
         $request->validate([
             'judul'  => 'nullable|string|max:255',
-            'tahun'  => 'nullable|integer',
+            'tahun'  => 'nullable|integer|min:2000|max:' . (date('Y') + 5),
             'metode' => 'nullable|string|max:255',
             'status' => 'nullable|string|max:255',
         ]);
@@ -353,12 +385,11 @@ class PpkController extends Controller
         try {
             $pengadaan = Pengadaan::find($id);
             if ($pengadaan) {
-                // simpan ke kolom yang ada (sesuaikan model kamu)
-                // aman: hanya set kalau kolomnya ada & property bisa diisi
-                if (isset($pengadaan->nama_pengadaan)) $pengadaan->nama_pengadaan = $request->judul ?? $pengadaan->nama_pengadaan;
-                if (isset($pengadaan->tahun_anggaran)) $pengadaan->tahun_anggaran = $request->tahun ?? $pengadaan->tahun_anggaran;
-                if (isset($pengadaan->metode_pengadaan)) $pengadaan->metode_pengadaan = $request->metode ?? $pengadaan->metode_pengadaan;
-                if (isset($pengadaan->status)) $pengadaan->status = $request->status ?? $pengadaan->status;
+                // mapping dari form edit (judul/tahun/metode/status) -> kolom pengadaans baru
+                if ($request->filled('judul'))  $pengadaan->nama_pekerjaan = $request->judul;
+                if ($request->filled('tahun'))  $pengadaan->tahun = (int)$request->tahun;
+                if ($request->filled('metode')) $pengadaan->jenis_pengadaan = $request->metode;
+                if ($request->filled('status')) $pengadaan->status_pekerjaan = $request->status;
 
                 $pengadaan->save();
 
@@ -376,45 +407,117 @@ class PpkController extends Controller
     }
 
     /**
-     * Tampilkan form Tambah Pengadaan
+     * Tampilkan form Tambah Pengadaan (PPK)
+     * (Tidak mengubah view. Kita hanya menambahkan $units jika view butuh dropdown)
      */
     public function pengadaanCreate()
     {
         $ppkName = auth()->user()->name ?? "PPK Utama";
-        return view('PPK.TambahPengadaan', compact('ppkName'));
+        $units = Unit::orderBy('nama')->get(); // aman meskipun view tidak memakai
+        return view('PPK.TambahPengadaan', compact('ppkName', 'units'));
     }
 
     /**
-     * Simpan Pengadaan ke Database + Upload dokumen
-     * (INI versi DB kamu, dipertahankan)
+     * Simpan Pengadaan ke Database + Upload dokumen (sesuai form TambahPengadaan.blade.php yang kamu upload)
+     * - support: unit_id (jika form sudah pakai id)
+     * - support: unit_kerja string (jika form masih pakai nama unit)
+     * - simpan dokumen multiple ke storage + jsonb
      */
     public function pengadaanStore(Request $request)
     {
-        $validated = $request->validate([
-            'nama_pengadaan'   => 'required|string|max:255',
-            'id_rup'           => 'nullable|string|max:100',
-            'unit_kerja'       => 'required|string|max:255',
-            'tahun_anggaran'   => 'required|integer|min:2000|max:' . (date('Y') + 5),
-            'metode_pengadaan' => 'required|string|max:100',
-            'pagu_anggaran'    => 'required|numeric|min:0',
-            'hps'              => 'nullable|numeric|min:0|lte:pagu_anggaran',
-            'nilai_kontrak'    => 'nullable|numeric|min:0',
-            'rekanan'          => 'nullable|string|max:255',
-            'tanggal_mulai'    => 'nullable|date',
-            'tanggal_selesai'  => 'nullable|date|after_or_equal:tanggal_mulai',
-            'deskripsi'        => 'nullable|string',
-            'dokumen_rup'      => 'nullable|file|mimes:pdf|max:10240',
-        ]);
+        // 1) Resolusi unit_id tanpa mengubah view
+        $unitId = $request->input('unit_id');
 
-        $validated['user_id'] = Auth::id();
-        $validated['status']  = 'Perencanaan';
-
-        if ($request->hasFile('dokumen_rup') && $request->file('dokumen_rup')->isValid()) {
-            $path = $request->file('dokumen_rup')->store('dokumen_rup', 'public');
-            $validated['dokumen_rup'] = $path;
+        if (!$unitId) {
+            $unitKerja = trim((string) $request->input('unit_kerja', ''));
+            if ($unitKerja !== '') {
+                $unit = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($unitKerja)])->first();
+                if (!$unit) {
+                    return back()->withErrors(['unit_kerja' => 'Unit kerja belum ada di master units.'])->withInput();
+                }
+                $unitId = $unit->id;
+            }
         }
 
-        Pengadaan::create($validated);
+        if (!$unitId) {
+            return back()->withErrors(['unit_id' => 'Unit wajib dipilih.'])->withInput();
+        }
+
+        // 2) Validasi field sesuai FORM kamu (tanpa ubah file view)
+        $data = $request->validate([
+            // Informasi umum
+            'tahun' => 'required|integer|min:2000|max:' . (date('Y') + 5),
+            'nama_pekerjaan' => 'nullable|string|max:255',
+            'id_rup' => 'nullable|string|max:255',
+            'jenis_pengadaan' => 'required|string|max:100',
+            'status_pekerjaan' => 'required|string|max:100',
+
+            // akses arsip
+            'status_arsip' => 'required|in:Publik,Privat',
+
+            // anggaran (di form biasanya string rupiah)
+            'pagu_anggaran' => 'nullable|string|max:50',
+            'hps' => 'nullable|string|max:50',
+            'nilai_kontrak' => 'nullable|string|max:50',
+            'nama_rekanan' => 'nullable|string|max:255',
+
+            // hidden json
+            'dokumen_tidak_dipersyaratkan_json' => 'nullable|string',
+        ]);
+
+        // 3) Normalisasi rupiah -> integer
+        $toInt = function ($v) {
+            if ($v === null) return null;
+            $num = preg_replace('/[^0-9]/', '', (string)$v);
+            return $num === '' ? null : (int)$num;
+        };
+        $data['pagu_anggaran'] = $toInt($data['pagu_anggaran'] ?? null);
+        $data['hps'] = $toInt($data['hps'] ?? null);
+        $data['nilai_kontrak'] = $toInt($data['nilai_kontrak'] ?? null);
+
+        // 4) Parse dokumen tidak dipersyaratkan json
+        $data['dokumen_tidak_dipersyaratkan'] = [];
+        if (!empty($data['dokumen_tidak_dipersyaratkan_json'])) {
+            $decoded = json_decode($data['dokumen_tidak_dipersyaratkan_json'], true);
+            if (is_array($decoded)) $data['dokumen_tidak_dipersyaratkan'] = $decoded;
+        }
+        unset($data['dokumen_tidak_dipersyaratkan_json']);
+
+        // 5) Set kolom wajib DB
+        $data['unit_id'] = (int)$unitId;
+        $data['created_by'] = Auth::id();
+
+        // 6) create dulu untuk dapat id (folder upload rapi)
+        $pengadaan = Pengadaan::create($data);
+
+        // 7) Upload dokumen multiple sesuai field name di form
+        $fileFields = [
+            'dokumen_kak','dokumen_hps','dokumen_spesifikasi_teknis','dokumen_rancangan_kontrak',
+            'dokumen_lembar_data_kualifikasi','dokumen_lembar_data_pemilihan','dokumen_daftar_kuantitas_harga',
+            'dokumen_jadwal_lokasi_pekerjaan','dokumen_gambar_rancangan_pekerjaan','dokumen_amdal',
+            'dokumen_penawaran','surat_penawaran','dokumen_kemenkumham','ba_pemberian_penjelasan',
+            'ba_pengumuman_negosiasi','ba_sanggah_banding','ba_penetapan','laporan_hasil_pemilihan',
+            'dokumen_sppbj','surat_perjanjian_kemitraan','surat_perjanjian_swakelola',
+            'surat_penugasan_tim_swakelola','dokumen_mou','dokumen_kontrak','ringkasan_kontrak',
+            'jaminan_pelaksanaan','jaminan_uang_muka','jaminan_pemeliharaan','surat_tagihan',
+            'surat_pesanan_epurchasing','dokumen_spmk','dokumen_sppd','laporan_pelaksanaan_pekerjaan',
+            'laporan_penyelesaian_pekerjaan','bap','bast_sementara','bast_akhir','dokumen_pendukung_lainya',
+        ];
+
+        foreach ($fileFields as $field) {
+            if ($request->hasFile($field)) {
+                $paths = [];
+                foreach ((array) $request->file($field) as $file) {
+                    if (!$file) continue;
+                    $filename = Str::random(8) . '_' . time() . '.' . $file->getClientOriginalExtension();
+                    $stored = $file->storeAs("public/pengadaan/{$pengadaan->id}/{$field}", $filename);
+                    $paths[] = Str::replaceFirst('public/', '', $stored); // simpan tanpa "public/"
+                }
+                $pengadaan->{$field} = $paths;
+            }
+        }
+
+        $pengadaan->save();
 
         return redirect()
             ->route('ppk.arsip')
@@ -485,5 +588,15 @@ class PpkController extends Controller
         return redirect()
             ->route('ppk.kelola.akun')
             ->with('success', 'Akun berhasil diperbarui.');
+    }
+
+    /**
+     * Helper format rupiah
+     */
+    private function formatRupiah($value): string
+    {
+        if ($value === null || $value === '') return '-';
+        $num = (int) $value;
+        return 'Rp ' . number_format($num, 0, ',', '.');
     }
 }

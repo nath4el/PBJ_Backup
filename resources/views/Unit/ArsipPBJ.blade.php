@@ -14,146 +14,77 @@
   {{-- Bootstrap Icons --}}
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 
+  {{-- CSRF for fetch --}}
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+
   {{-- CSS dashboard unit --}}
   <link rel="stylesheet" href="{{ asset('css/Unit.css') }}">
 </head>
 
 <body class="dash-body page-arsip">
 @php
-  $unitName = "Fakultas Teknik";
+  $unitName = auth()->user()->name ?? "Unit Kerja";
 
-  // =========================
-  // DATA SOURCE:
-  // - Jika controller sudah kirim $arsips (paginator), pakai itu
-  // - Jika belum, fallback ke dummy lama (biar halaman tidak pecah)
-  // =========================
-  if (isset($arsips) && $arsips instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator) {
-    $rows = collect($arsips->items())->map(function($item) use ($unitName){
-      $r = is_array($item) ? $item : (array) $item;
+  /**
+   * ✅ FINAL: TANPA DUMMY
+   * Controller WAJIB mengirim $arsips (LengthAwarePaginator) dari database.
+   */
+  if (!isset($arsips) || !($arsips instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)) {
+    throw new \RuntimeException('Variable $arsips (paginator) tidak dikirim dari controller. Pastikan UnitController@arsipIndex mengirim compact("arsips").');
+  }
 
-      // ✅ NOTE KOLOM E (Dokumen Tidak Dipersyaratkan)
-      // - Terima boolean / string dari backend
-      // - Kalau true/1/"ya" -> tampilkan default message
-      // - Kalau string panjang -> tampilkan string itu
-      $rawE = $r["dokumen_tidak_dipersyaratkan"] ?? ($r["kolom_e"] ?? ($r["doc_note"] ?? null));
+  // Bentuk rows sesuai struktur yang dipakai UI
+  $rows = collect($arsips->items())->map(function($item) use ($unitName){
+    $r = is_array($item) ? $item : (array) $item;
+
+    // KOLOM E (Dokumen Tidak Dipersyaratkan) -> controller kirim array
+    $rawE = $r["dokumen_tidak_dipersyaratkan"] ?? ($r["kolom_e"] ?? ($r["doc_note"] ?? null));
+    $docNote = null;
+
+    if (is_array($rawE) && count($rawE) > 0) {
+      $docNote = implode(', ', array_map(fn($x) => is_string($x) ? $x : json_encode($x), $rawE));
+    } else {
       $eVal = is_string($rawE) ? trim($rawE) : $rawE;
 
-      $docNote = null;
       if ($eVal === true || $eVal === 1 || $eVal === "1" || (is_string($eVal) && in_array(strtolower($eVal), ["ya","iya","true","yes"], true))) {
         $docNote = "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).";
       } elseif (is_string($eVal) && $eVal !== "") {
-        $docNote = $eVal; // kalau backend kirim keterangan detail, pakai itu
+        $docNote = $eVal;
       }
+    }
 
-      return [
-        "id" => $r["id"] ?? null,
-        "tahun" => (string)($r["tahun"] ?? ""),
-        "unit" => $r["unit"] ?? $unitName,
-        "pekerjaan" => $r["pekerjaan"] ?? ($r["judul"] ?? "-"),
-        "jenis_pbj" => $r["jenis_pbj"] ?? "Pengadaan Pekerjaan Konstruksi",
-        "metode_pbj" => $r["metode_pbj"] ?? ($r["metode"] ?? "-"),
-        "nilai_kontrak" => $r["nilai_kontrak"] ?? ($r["kontrak"] ?? ($r["nilai"] ?? "-")),
-        "status_arsip" => $r["status_arsip"] ?? "Publik",
-        "status_pekerjaan" => $r["status_pekerjaan"] ?? ($r["status"] ?? "-"),
+    return [
+      "id" => $r["id"] ?? null,
+      "tahun" => (string)($r["tahun"] ?? ""),
+      "unit" => $r["unit"] ?? $unitName,
+      "pekerjaan" => $r["pekerjaan"] ?? ($r["judul"] ?? "-"),
+      "jenis_pbj" => $r["jenis_pbj"] ?? "Pengadaan Pekerjaan Konstruksi",
+      "metode_pbj" => $r["metode_pbj"] ?? ($r["metode"] ?? "-"),
+      "nilai_kontrak" => $r["nilai_kontrak"] ?? ($r["kontrak"] ?? ($r["nilai"] ?? "-")),
+      "status_arsip" => $r["status_arsip"] ?? "-",
+      "status_pekerjaan" => $r["status_pekerjaan"] ?? ($r["status"] ?? "-"),
 
-        "idrup" => $r["idrup"] ?? ($r["id_rup"] ?? null),
-        "rekanan" => $r["rekanan"] ?? ($r["nama_rekanan"] ?? null),
-        "jenis" => $r["jenis"] ?? ($r["jenis_pengadaan"] ?? null),
-        "pagu" => $r["pagu"] ?? ($r["pagu_anggaran"] ?? null),
-        "hps" => $r["hps"] ?? null,
+      "id_rup" => $r["id_rup"] ?? ($r["idrup"] ?? null),
+      "nama_rekanan" => $r["nama_rekanan"] ?? ($r["rekanan"] ?? null),
+      "jenis_pengadaan" => $r["jenis_pengadaan"] ?? ($r["jenis"] ?? null),
+      "pagu_anggaran" => $r["pagu_anggaran"] ?? ($r["pagu"] ?? null),
+      "hps" => $r["hps"] ?? null,
 
-        // ✅ tambahan untuk popup (kolom E)
-        "doc_note" => $docNote,
-      ];
-    })->values()->all();
-  } else {
-    $rows = [
-      [
-        "id" => 1,
-        "tahun"=>"2024",
-        "unit"=>"Fakultas Teknik",
-        "pekerjaan"=>"Pengadaan Laboratorium Komputer Terpadu | RUP-2026-001-FT",
-        "jenis_pbj"=>"Pengadaan Pekerjaan Konstruksi",
-        "metode_pbj"=>"Pengadaan Langsung",
-        "nilai_kontrak"=>"Rp. 100.866.549.000,00",
-        "status_arsip"=>"Publik",
-        "status_pekerjaan"=>"Perencanaan",
-
-        "idrup" => "2026",
-        "rekanan" => "PT Jadi Kaya Bersama",
-        "jenis" => "Tender",
-        "pagu" => "Rp 500.000.000",
-        "hps" => "Rp 480.000.000",
-
-        // ✅ dummy kolom E
-        "doc_note" => "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).",
-      ],
-      [
-        "id" => 2,
-        "tahun"=>"2024",
-        "unit"=>"Fakultas Ekonomi dan Bisnis",
-        "pekerjaan"=>"Pengadaan Laboratorium Komputer Terpadu | RUP-2026-002-FEB",
-        "jenis_pbj"=>"Pengadaan Pekerjaan Konstruksi",
-        "metode_pbj"=>"Pengadaan Langsung",
-        "nilai_kontrak"=>"Rp. 100.866.549.000,00",
-        "status_arsip"=>"Privat",
-        "status_pekerjaan"=>"Pemilihan",
-
-        "idrup" => "2026",
-        "rekanan" => "PT Jadi Kaya Bersama",
-        "jenis" => "Tender",
-        "pagu" => "Rp 500.000.000",
-        "hps" => "Rp 480.000.000",
-
-        "doc_note" => "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).",
-      ],
-      [
-        "id" => 3,
-        "tahun"=>"2024",
-        "unit"=>"Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)",
-        "pekerjaan"=>"Pengadaan Laboratorium Komputer Terpadu | RUP-2026-003-FAPET",
-        "jenis_pbj"=>"Pengadaan Pekerjaan Konstruksi",
-        "metode_pbj"=>"Pengadaan Langsung",
-        "nilai_kontrak"=>"Rp. 100.866.549.000,00",
-        "status_arsip"=>"Publik",
-        "status_pekerjaan"=>"Pelaksanaan",
-
-        "idrup" => "2026",
-        "rekanan" => "PT Jadi Kaya Bersama",
-        "jenis" => "Tender",
-        "pagu" => "Rp 500.000.000",
-        "hps" => "Rp 480.000.000",
-
-        "doc_note" => "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).",
-      ],
-      [
-        "id" => 4,
-        "tahun"=>"2024",
-        "unit"=>"Fakultas Hukum",
-        "pekerjaan"=>"Pengadaan Laboratorium Komputer Terpadu | RUP-2026-004-FH",
-        "jenis_pbj"=>"Pengadaan Pekerjaan Konstruksi",
-        "metode_pbj"=>"Pengadaan Langsung",
-        "nilai_kontrak"=>"Rp. 100.866.549.000,00",
-        "status_arsip"=>"Privat",
-        "status_pekerjaan"=>"Selesai",
-
-        "idrup" => "2026",
-        "rekanan" => "PT Jadi Kaya Bersama",
-        "jenis" => "Tender",
-        "pagu" => "Rp 500.000.000",
-        "hps" => "Rp 480.000.000",
-
-        // contoh: kosongkan kalau tidak ingin tampil di popup
-        "doc_note" => "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).",
-      ],
+      // dokumen dari controller: object keyed by field
+      "dokumen" => $r["dokumen"] ?? [],
+      "doc_note" => $docNote,
     ];
-  }
+  })->values()->all();
 
+  // Options filter
   $years = array_values(array_unique(array_map(fn($x) => $x['tahun'], $rows)));
   rsort($years);
 
   $unitOptions = array_values(array_unique(array_map(fn($x) => $x['unit'], $rows)));
   sort($unitOptions);
+
+  // ✅ Endpoint delete arsip (bulk)
+  $bulkDeleteUrl = url('/unit/arsip'); // DELETE /unit/arsip  => unit.arsip.bulkDestroy
 @endphp
 
 <div class="dash-wrap">
@@ -170,7 +101,7 @@
       </div>
     </div>
 
-        <div class="dash-unitbox">
+    <div class="dash-unitbox">
       <div class="dash-unit-label">Unit Kerja :</div>
       <div class="dash-unit-name">{{ $unitName }}</div>
     </div>
@@ -192,10 +123,9 @@
       </a>
 
       <a class="dash-link {{ request()->routeIs('unit.kelola.akun') ? 'active' : '' }}" href="{{ route('unit.kelola.akun') }}">
-  <span class="ic"><i class="bi bi-person-gear"></i></span>
-  Kelola Akun
-</a>
-
+        <span class="ic"><i class="bi bi-person-gear"></i></span>
+        Kelola Akun
+      </a>
     </nav>
 
     <div class="dash-side-actions">
@@ -273,7 +203,8 @@
             <i class="bi bi-pencil"></i>
           </a>
 
-          <button type="button" id="apDeleteBtn" class="ap-icbtn is-disabled" title="Hapus" aria-disabled="true">
+          <button type="button" id="apDeleteBtn" class="ap-icbtn is-disabled" title="Hapus" aria-disabled="true"
+                  data-bulk-delete-url="{{ $bulkDeleteUrl }}">
             <i class="bi bi-trash3"></i>
           </button>
         </div>
@@ -303,122 +234,137 @@
         <div class="ap-col-center" style="text-align:center;">Aksi</div>
       </div>
 
-      @foreach($rows as $r)
-        @php
-          $sp = strtolower(trim($r['status_pekerjaan']));
-          $spClass = match ($sp) {
-            'perencanaan' => 'ap-sp ap-sp-plan',
-            'pemilihan'   => 'ap-sp ap-sp-select',
-            'pelaksanaan' => 'ap-sp ap-sp-do',
-            'selesai'     => 'ap-sp ap-sp-done',
-            default       => 'ap-sp',
-          };
-        @endphp
-
-        <div class="ap-row"
-             data-status="{{ $r['status_arsip'] }}"
-             data-year="{{ $r['tahun'] }}"
-             data-unit="{{ $r['unit'] }}"
-             data-search="{{ strtolower($r['tahun'].' '.$r['unit'].' '.$r['pekerjaan'].' '.$r['metode_pbj'].' '.$r['nilai_kontrak'].' '.$r['status_pekerjaan']) }}">
-
-          <div class="ap-check">
-            <input class="ap-row-check" type="checkbox" value="{{ $r['id'] }}" aria-label="Pilih baris" />
-          </div>
-
-          <div class="ap-year ap-col-center">{{ $r['tahun'] }}</div>
-          <div class="ap-unit ap-col-left">{{ $r['unit'] }}</div>
-
-          <div class="ap-job ap-col-left">
-            {{ $r['pekerjaan'] }}
-          </div>
-
-          <div class="ap-col-center">
-            <span class="ap-money">{{ $r['nilai_kontrak'] }}</span>
-          </div>
-
-          <div class="ap-arsip ap-col-center ap-arsip-center">
-            @if($r['status_arsip'] === 'Publik')
-              <span class="ap-eye ap-eye-pub"><i class="bi bi-eye"></i> Publik</span>
-            @else
-              <span class="ap-eye ap-eye-pri"><i class="bi bi-eye-slash"></i> Privat</span>
-            @endif
-          </div>
-
-          <div class="ap-col-center">
-            <span class="{{ $spClass }}">{{ $r['status_pekerjaan'] }}</span>
-          </div>
-
-          <div class="ap-aksi ap-col-center">
-            <a href="#"
-              class="ap-detail js-open-detail"
-              data-title="{{ $r['pekerjaan'] }}"
-              data-unit="{{ $r['unit'] }}"
-              data-tahun="{{ $r['tahun'] }}"
-              data-idrup="{{ $r['idrup'] ?? '2026' }}"
-              data-status="{{ $r['status_pekerjaan'] }}"
-              data-rekanan="{{ $r['rekanan'] ?? 'PT Jadi Kaya Bersama' }}"
-              data-jenis="{{ $r['jenis'] ?? 'Tender' }}"
-              data-pagu="{{ $r['pagu'] ?? 'Rp 500.000.000' }}"
-              data-hps="{{ $r['hps'] ?? 'Rp 480.000.000' }}"
-              data-kontrak="{{ $r['nilai_kontrak'] }}"
-              {{-- ✅ CONNECT KOLOM E KE POPUP --}}
-              data-docnote="{{ $r['doc_note'] ?? '' }}"
-            >Detail</a>
-          </div>
+      {{-- EMPTY STATE --}}
+      @if(empty($rows))
+        <div class="ap-empty" style="padding:24px;text-align:center;opacity:.85;">
+          <i class="bi bi-inbox" style="font-size:28px;"></i>
+          <p style="margin:8px 0 0;">Belum ada data arsip untuk unit ini.</p>
         </div>
-      @endforeach
+      @else
+        @foreach($rows as $r)
+          @php
+            $sp = strtolower(trim($r['status_pekerjaan'] ?? ''));
+            $spClass = match ($sp) {
+              'perencanaan' => 'ap-sp ap-sp-plan',
+              'pemilihan'   => 'ap-sp ap-sp-select',
+              'pelaksanaan' => 'ap-sp ap-sp-do',
+              'selesai'     => 'ap-sp ap-sp-done',
+              default       => 'ap-sp',
+            };
+
+            $pekerjaanRaw = (string)($r['pekerjaan'] ?? '');
+            $parts = array_map('trim', explode('|', $pekerjaanRaw, 2));
+            $namaPekerjaan = $parts[0] ?: ($r['nama_pekerjaan'] ?? '-');
+            $idrupValue    = $r['id_rup'] ?? ($parts[1] ?? '-');
+
+            $rekananValue  = $r['nama_rekanan'] ?? '-';
+            $docsValue     = $r['dokumen'] ?? [];
+          @endphp
+
+          <div class="ap-row"
+              data-status="{{ $r['status_arsip'] }}"
+              data-year="{{ $r['tahun'] }}"
+              data-unit="{{ $r['unit'] }}"
+              data-search="{{ strtolower(($r['tahun'] ?? '').' '.($r['unit'] ?? '').' '.$namaPekerjaan.' '.$idrupValue.' '.($r['metode_pbj'] ?? '').' '.($r['nilai_kontrak'] ?? '').' '.($r['status_pekerjaan'] ?? '')) }}">
+
+            <div class="ap-check">
+              <input class="ap-row-check" type="checkbox" value="{{ $r['id'] }}" aria-label="Pilih baris" />
+            </div>
+
+            <div class="ap-year ap-col-center">{{ $r['tahun'] }}</div>
+            <div class="ap-unit ap-col-left">{{ $r['unit'] }}</div>
+
+            <div class="ap-job ap-col-left">
+              {{ $namaPekerjaan }}
+            </div>
+
+            <div class="ap-col-center">
+              <span class="ap-money">{{ $r['nilai_kontrak'] }}</span>
+            </div>
+
+            <div class="ap-arsip ap-col-center ap-arsip-center">
+              @if(($r['status_arsip'] ?? '') === 'Publik')
+                <span class="ap-eye ap-eye-pub"><i class="bi bi-eye"></i> Publik</span>
+              @else
+                <span class="ap-eye ap-eye-pri"><i class="bi bi-eye-slash"></i> Privat</span>
+              @endif
+            </div>
+
+            <div class="ap-col-center">
+              <span class="{{ $spClass }}">{{ $r['status_pekerjaan'] }}</span>
+            </div>
+
+            <div class="ap-aksi ap-col-center">
+              <a href="#"
+                class="ap-detail js-open-detail"
+                data-id="{{ $r['id'] }}"
+                data-title="{{ $namaPekerjaan }}"
+                data-unit="{{ $r['unit'] }}"
+                data-tahun="{{ $r['tahun'] }}"
+                data-idrup="{{ $idrupValue }}"
+                data-status="{{ $r['status_pekerjaan'] }}"
+                data-rekanan="{{ $rekananValue }}"
+                data-jenis="{{ $r['jenis_pengadaan'] ?? '-' }}"
+                data-pagu="{{ $r['pagu_anggaran'] ?? '-' }}"
+                data-hps="{{ $r['hps'] ?? '-' }}"
+                data-kontrak="{{ $r['nilai_kontrak'] }}"
+                data-docnote="{{ $r['doc_note'] ?? '' }}"
+                data-docs='@json($docsValue)'
+              >Detail</a>
+            </div>
+          </div>
+        @endforeach
+      @endif
 
       {{-- PAGINATION --}}
-      @if(isset($arsips) && $arsips instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)
-        <div class="ap-pagination-wrap">
-          <div class="ap-page-info">
-            Halaman {{ $arsips->currentPage() }} dari {{ $arsips->lastPage() }}
-            • Menampilkan {{ $arsips->count() }} dari {{ $arsips->total() }} data
-          </div>
-
-          <div class="ap-pagination">
-            <a class="ap-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
-               href="{{ $arsips->onFirstPage() ? '#' : $arsips->previousPageUrl() }}"
-               aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}">
-              <i class="bi bi-chevron-left"></i>
-            </a>
-
-            @php
-              $current = $arsips->currentPage();
-              $last = $arsips->lastPage();
-              $start = max(1, $current - 2);
-              $end   = min($last, $current + 2);
-            @endphp
-
-            @if($start > 1)
-              <a class="ap-page-btn" href="{{ $arsips->url(1) }}">1</a>
-              @if($start > 2)
-                <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
-              @endif
-            @endif
-
-            @for($i = $start; $i <= $end; $i++)
-              <a class="ap-page-btn {{ $i === $current ? 'is-active' : '' }}"
-                 href="{{ $arsips->url($i) }}">
-                {{ $i }}
-              </a>
-            @endfor
-
-            @if($end < $last)
-              @if($end < $last - 1)
-                <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
-              @endif
-              <a class="ap-page-btn" href="{{ $arsips->url($last) }}">{{ $last }}</a>
-            @endif
-
-            <a class="ap-page-btn {{ $arsips->hasMorePages() ? '' : 'is-disabled' }}"
-               href="{{ $arsips->hasMorePages() ? $arsips->nextPageUrl() : '#' }}"
-               aria-disabled="{{ $arsips->hasMorePages() ? 'false' : 'true' }}">
-              <i class="bi bi-chevron-right"></i>
-            </a>
-          </div>
+      <div class="ap-pagination-wrap">
+        <div class="ap-page-info">
+          Halaman {{ $arsips->currentPage() }} dari {{ $arsips->lastPage() }}
+          • Menampilkan {{ $arsips->count() }} dari {{ $arsips->total() }} data
         </div>
-      @endif
+
+        <div class="ap-pagination">
+          <a class="ap-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
+            href="{{ $arsips->onFirstPage() ? '#' : $arsips->previousPageUrl() }}"
+            aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}">
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          @php
+            $current = $arsips->currentPage();
+            $last = $arsips->lastPage();
+            $start = max(1, $current - 2);
+            $end   = min($last, $current + 2);
+          @endphp
+
+          @if($start > 1)
+            <a class="ap-page-btn" href="{{ $arsips->url(1) }}">1</a>
+            @if($start > 2)
+              <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
+            @endif
+          @endif
+
+          @for($i = $start; $i <= $end; $i++)
+            <a class="ap-page-btn {{ $i === $current ? 'is-active' : '' }}"
+              href="{{ $arsips->url($i) }}">
+              {{ $i }}
+            </a>
+          @endfor
+
+          @if($end < $last)
+            @if($end < $last - 1)
+              <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
+            @endif
+            <a class="ap-page-btn" href="{{ $arsips->url($last) }}">{{ $last }}</a>
+          @endif
+
+          <a class="ap-page-btn {{ $arsips->hasMorePages() ? '' : 'is-disabled' }}"
+            href="{{ $arsips->hasMorePages() ? $arsips->nextPageUrl() : '#' }}"
+            aria-disabled="{{ $arsips->hasMorePages() ? 'false' : 'true' }}">
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+      </div>
 
     </section>
   </main>
@@ -430,643 +376,249 @@
 
   <div class="dt-panel" role="dialog" aria-modal="true" aria-labelledby="dtTitle">
     <div class="dt-card">
-      <button type="button" class="dt-close-inside" id="dtCloseBtn" aria-label="Tutup">
-        <i class="bi bi-x-lg"></i>
-      </button>
 
-      <div class="dt-title" id="dtTitle">-</div>
+      <div class="dt-topbar">
+        <div class="dt-title" id="dtTitle">-</div>
 
-      <div class="dt-info-grid">
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-envelope"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Unit Kerja</div>
-            <div class="dt-val" id="dtUnit">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-calendar-event"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Tahun Anggaran</div>
-            <div class="dt-val" id="dtTahun">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-person-badge"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">ID RUP</div>
-            <div class="dt-val" id="dtIdRup">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-folder2"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Status Pekerjaan</div>
-            <div class="dt-val" id="dtStatus">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-person"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Nama Rekanan</div>
-            <div class="dt-val" id="dtRekanan">-</div>
-          </div>
-        </div>
-
-        <div class="dt-info">
-          <div class="dt-ic"><i class="bi bi-box"></i></div>
-          <div class="dt-info-txt">
-            <div class="dt-label">Jenis Pengadaan</div>
-            <div class="dt-val" id="dtJenis">-</div>
-          </div>
-        </div>
+        <button type="button" class="dt-close-inside" id="dtCloseBtn" aria-label="Tutup">
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
-      <div class="dt-divider"></div>
+      <div class="dt-body">
 
-      <div class="dt-section-title">Informasi Anggaran</div>
-
-      <div class="dt-budget-grid">
-        <div class="dt-budget">
-          <div class="dt-label">Pagu Anggaran</div>
-          <div class="dt-money" id="dtPagu">-</div>
-        </div>
-
-        <div class="dt-budget">
-          <div class="dt-label">HPs</div>
-          <div class="dt-money" id="dtHps">-</div>
-        </div>
-
-        <div class="dt-budget">
-          <div class="dt-label">Nilai Kontrak</div>
-          <div class="dt-money" id="dtKontrak">-</div>
-        </div>
-      </div>
-
-      <div class="dt-divider"></div>
-
-      <div class="dt-section-title">Dokumen Pengadaan</div>
-
-      <div class="dt-doc-grid">
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+        <div class="dt-info-grid">
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-envelope"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Unit Kerja</div>
+              <div class="dt-val" id="dtUnit">-</div>
             </div>
-          @endfor
-        </div>
+          </div>
 
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-calendar-event"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Tahun Anggaran</div>
+              <div class="dt-val" id="dtTahun">-</div>
             </div>
-          @endfor
-        </div>
+          </div>
 
-        <div class="dt-doc-col">
-          @for($i=0;$i<4;$i++)
-            <div class="dt-doc-item">
-              <div class="dt-doc-left">
-                <i class="bi bi-file-earmark-text"></i>
-                <span>Dokumen RUP</span>
-              </div>
-              <a href="#" class="dt-download"><i class="bi bi-download"></i> Unduh</a>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-person-badge"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">ID RUP</div>
+              <div class="dt-val" id="dtIdRup">-</div>
             </div>
-          @endfor
-        </div>
-      </div>
+          </div>
 
-      {{-- ✅✅ TAMBAHAN (KOLOM E) — TARUH DI BAWAH LIST DOKUMEN --}}
-      <div class="dt-doc-note" id="dtDocNoteWrap" hidden>
-        <div class="dt-doc-note-ic"><i class="bi bi-info-circle"></i></div>
-        <div class="dt-doc-note-txt">
-          <div class="dt-doc-note-title">Dokumen tidak dipersyaratkan</div>
-          <div class="dt-doc-note-desc" id="dtDocNote">-</div>
-        </div>
-      </div>
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-folder2"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Status Pekerjaan</div>
+              <div class="dt-val" id="dtStatus">-</div>
+            </div>
+          </div>
 
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-person"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Nama Rekanan</div>
+              <div class="dt-val" id="dtRekanan">-</div>
+            </div>
+          </div>
+
+          <div class="dt-info">
+            <div class="dt-ic"><i class="bi bi-box"></i></div>
+            <div class="dt-info-txt">
+              <div class="dt-label">Jenis Pengadaan</div>
+              <div class="dt-val" id="dtJenis">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dt-divider"></div>
+
+        <div class="dt-section-title">Informasi Anggaran</div>
+
+        <div class="dt-budget-grid">
+          <div class="dt-budget">
+            <div class="dt-label">Pagu Anggaran</div>
+            <div class="dt-money" id="dtPagu">-</div>
+          </div>
+
+          <div class="dt-budget">
+            <div class="dt-label">HPs</div>
+            <div class="dt-money" id="dtHps">-</div>
+          </div>
+
+          <div class="dt-budget">
+            <div class="dt-label">Nilai Kontrak</div>
+            <div class="dt-money" id="dtKontrak">-</div>
+          </div>
+        </div>
+
+        <div class="dt-divider"></div>
+
+        <div class="dt-section-title">Dokumen Pengadaan</div>
+
+        <div class="dt-doc-grid" id="dtDocList"></div>
+        <div class="dt-doc-empty" id="dtDocEmpty" hidden>Tidak ada dokumen yang diupload.</div>
+
+        {{-- KOLOM E --}}
+        <div class="dt-doc-note" id="dtDocNoteWrap" hidden>
+          <div class="dt-doc-note-ic"><i class="bi bi-info-circle"></i></div>
+          <div class="dt-doc-note-txt">
+            <div class="dt-doc-note-title">Dokumen tidak dipersyaratkan</div>
+            <div class="dt-doc-note-desc" id="dtDocNote">-</div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 </div>
 
 <style>
-  /* =========================================================
-     SCOPED CSS (ANTI KONFLIK dengan Unit.css)
-     - Semua rules di-scope ke .page-arsip
-  ========================================================= */
-
-  body.page-arsip.dash-body{
-    font-size: 18px;
-    line-height: 1.6;
-  }
-
+  /* (STYLE kamu tetap sama — aku tidak ubah) */
+  body.page-arsip.dash-body{ font-size: 18px; line-height: 1.6; }
   .page-arsip{
-    --ap-field-h: 46px;
-    --ap-field-r: 12px;
-    --ap-field-px: 12px;
-
-    --ap-sp-h: 34px;
-    --ap-sp-w: 124px;
-    --ap-sp-r: 8px;
-
+    --ap-field-h: 46px; --ap-field-r: 12px; --ap-field-px: 12px;
+    --ap-sp-h: 34px; --ap-sp-w: 124px; --ap-sp-r: 8px;
     --ap-row-divider: 2px;
-
     --unsoed-yellow: #f6c100;
     --unsoed-yellow-dark: #d9aa00;
   }
-
-  .page-arsip .ap-header{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap:12px;
-  }
+  .page-arsip .ap-header{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   .page-arsip .ap-header-left{ min-width: 0; }
-  .page-arsip .ap-header-right{
-    flex: 0 0 auto;
-    display:flex;
-    align-items:center;
-    justify-content:flex-end;
-  }
-
+  .page-arsip .ap-header-right{ flex: 0 0 auto; display:flex; align-items:center; justify-content:flex-end; }
   .page-arsip .ap-print-btn{
-    height: 42px;
-    padding: 0 14px;
-    border-radius: 12px;
+    height: 42px; padding: 0 14px; border-radius: 12px;
     border: 1px solid rgba(0,0,0,.08);
-    background: var(--unsoed-yellow);
-    color: #1b1b1b;
-    font-size: 15px;
-    font-weight: 400;
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    cursor:pointer;
-    box-shadow: 0 6px 16px rgba(0,0,0,.10);
-    transition: .15s ease;
-    user-select:none;
-    white-space: nowrap;
-    letter-spacing: 0.8px;
+    background: var(--unsoed-yellow); color: #1b1b1b;
+    font-size: 15px; font-weight: 400;
+    display:inline-flex; align-items:center; gap:8px;
+    cursor:pointer; box-shadow: 0 6px 16px rgba(0,0,0,.10);
+    transition: .15s ease; user-select:none; white-space: nowrap; letter-spacing: 0.8px;
   }
-  .page-arsip .ap-print-btn:hover{
-    background: var(--unsoed-yellow-dark);
-    transform: translateY(-1px);
-  }
+  .page-arsip .ap-print-btn:hover{ background: var(--unsoed-yellow-dark); transform: translateY(-1px); }
   .page-arsip .ap-print-btn:active{ transform: translateY(0); }
-  .page-arsip .ap-print-btn i{
-    font-size: 16px;
-    line-height: 1;
-    display:block;
-  }
-
-  .page-arsip .ap-filter-row{
-    display:flex;
-    gap:12px;
-    align-items:center;
-    flex-wrap:nowrap;
-  }
-
-  .page-arsip .ap-search{
-    position: relative;
-    flex: 1 1 auto;
-    min-width: 220px;
-    height: var(--ap-field-h);
-    display:flex;
-    align-items:center;
-  }
-  .page-arsip .ap-search i{
-    position:absolute;
-    left: var(--ap-field-px);
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 18px;
-    opacity: .75;
-    pointer-events:none;
-  }
-  .page-arsip .ap-search input{
-    width:100%;
-    height: 100%;
-    font-size: 16px;
-    padding: 0 calc(var(--ap-field-px) + 6px) 0 44px;
-    border-radius: var(--ap-field-r);
-    box-sizing: border-box;
-  }
-
-  .page-arsip .ap-select{
-    position: relative;
-    flex: 0 0 200px;
-    min-width: 200px;
-    height: var(--ap-field-h);
-    display:flex;
-    align-items:center;
-  }
-  .page-arsip .ap-select select{
-    width:100%;
-    height: 100%;
-    font-size: 16px;
-    padding: 0 42px 0 var(--ap-field-px);
-    border-radius: var(--ap-field-r);
-    box-sizing: border-box;
-  }
-  .page-arsip .ap-select i{
-    position:absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events:none;
-  }
-
-  .page-arsip .ap-tools{
-    display:flex;
-    gap:10px;
-    align-items:center;
-    flex: 0 0 auto;
-  }
-  .page-arsip .ap-icbtn{
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    line-height: 1;
-  }
-  .page-arsip .ap-icbtn i{
-    font-size: 18px;
-    line-height: 1;
-    display:block;
-  }
-
+  .page-arsip .ap-print-btn i{ font-size: 16px; line-height: 1; display:block; }
+  .page-arsip .ap-filter-row{ display:flex; gap:12px; align-items:center; flex-wrap:nowrap; }
+  .page-arsip .ap-search{ position: relative; flex: 1 1 auto; min-width: 220px; height: var(--ap-field-h); display:flex; align-items:center; }
+  .page-arsip .ap-search i{ position:absolute; left: var(--ap-field-px); top: 50%; transform: translateY(-50%); font-size: 18px; opacity: .75; pointer-events:none; }
+  .page-arsip .ap-search input{ width:100%; height: 100%; font-size: 16px; padding: 0 calc(var(--ap-field-px) + 6px) 0 44px; border-radius: var(--ap-field-r); box-sizing: border-box; }
+  .page-arsip .ap-select{ position: relative; flex: 0 0 200px; min-width: 200px; height: var(--ap-field-h); display:flex; align-items:center; }
+  .page-arsip .ap-select select{ width:100%; height: 100%; font-size: 16px; padding: 0 42px 0 var(--ap-field-px); border-radius: var(--ap-field-r); box-sizing: border-box; }
+  .page-arsip .ap-select i{ position:absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events:none; }
+  .page-arsip .ap-tools{ display:flex; gap:10px; align-items:center; flex: 0 0 auto; }
+  .page-arsip .ap-icbtn{ width: 40px; height: 40px; padding: 0; display:inline-flex; align-items:center; justify-content:center; line-height: 1; }
+  .page-arsip .ap-icbtn i{ font-size: 18px; line-height: 1; display:block; }
   .page-arsip .ap-head,
   .page-arsip .ap-row{
     display:grid;
-    grid-template-columns:
-      44px
-      86px
-      1.25fr
-      2.45fr
-      1.55fr
-      1.10fr
-      1.25fr
-      90px;
+    grid-template-columns: 44px 86px 1.25fr 2.45fr 1.55fr 1.10fr 1.25fr 90px;
     column-gap: 18px;
-    padding-left: 18px;
-    padding-right: 18px;
+    padding-left: 18px; padding-right: 18px;
     font-size: 16px;
     align-items:center;
   }
-
   .page-arsip .ap-head > div,
-  .page-arsip .ap-row > div{
-    text-align:left;
-    justify-self:start;
-    min-width: 0;
-  }
-
-  .page-arsip .ap-col-left{
-    text-align:left !important;
-    justify-self:start !important;
-  }
-  .page-arsip .ap-col-center{
-    text-align:center !important;
-    justify-self:center !important;
-  }
-
-  .page-arsip .ap-nilai-sort{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    gap:2px;
-  }
-
-  .page-arsip .ap-sort-btn{
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
-    border: none;
-    background: transparent;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    transition: .15s ease;
-    padding: 0;
-    line-height: 1;
-  }
+  .page-arsip .ap-row > div{ text-align:left; justify-self:start; min-width: 0; }
+  .page-arsip .ap-col-left{ text-align:left !important; justify-self:start !important; }
+  .page-arsip .ap-col-center{ text-align:center !important; justify-self:center !important; }
+  .page-arsip .ap-nilai-sort{ display:inline-flex; align-items:center; justify-content:center; gap:2px; }
+  .page-arsip .ap-sort-btn{ width: 32px; height: 32px; border-radius: 10px; border: none; background: transparent; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition: .15s ease; padding: 0; line-height: 1; }
   .page-arsip .ap-sort-btn:hover{ background: transparent; }
-  .page-arsip .ap-sort-btn i{
-    font-size: 20px;
-    line-height: 1;
-    display:block;
-    color:#fff !important;
-  }
-
-  .page-arsip .ap-arsip-center{
-    display:flex;
-    justify-content:center;
-    align-items:center;
-  }
-
-  .page-arsip .ap-job{
-    line-height: 1.35;
-    overflow-wrap: anywhere;
-  }
-
-  .page-arsip .ap-money{
-    display:inline-block;
-    color: var(--navy2);
-    font-weight: 400;
-    white-space: nowrap;
-    line-height: 1.2;
-  }
-
-  .page-arsip .ap-row{
-    border-top: var(--ap-row-divider) solid #eef3f6;
-  }
-
-  .page-arsip .ap-sp{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    height: var(--ap-sp-h);
-    width: var(--ap-sp-w);
-    padding: 0 14px;
-    border-radius: var(--ap-sp-r);
-    font-size: 15px;
-    white-space: nowrap;
-    text-align:center;
-  }
-
-  .page-arsip .ap-sp-plan{   background:#FDF0A8; }
+  .page-arsip .ap-sort-btn i{ font-size: 20px; line-height: 1; display:block; color:#fff !important; }
+  .page-arsip .ap-arsip-center{ display:flex; justify-content:center; align-items:center; }
+  .page-arsip .ap-job{ line-height: 1.35; overflow-wrap: anywhere; }
+  .page-arsip .ap-money{ display:inline-block; color: var(--navy2); font-weight: 400; white-space: nowrap; line-height: 1.2; }
+  .page-arsip .ap-row{ border-top: var(--ap-row-divider) solid #eef3f6; }
+  .page-arsip .ap-sp{ display:inline-flex; align-items:center; justify-content:center; height: var(--ap-sp-h); width: var(--ap-sp-w); padding: 0 14px; border-radius: var(--ap-sp-r); font-size: 15px; white-space: nowrap; text-align:center; }
+  .page-arsip .ap-sp-plan{ background:#FDF0A8; }
   .page-arsip .ap-sp-select{ background:#E8C9FF; }
-  .page-arsip .ap-sp-do{     background:#F8B8B8; }
-  .page-arsip .ap-sp-done{   background:#BFE9BF; }
-
+  .page-arsip .ap-sp-do{ background:#F8B8B8; }
+  .page-arsip .ap-sp-done{ background:#BFE9BF; }
   .page-arsip .ap-eye,
   .page-arsip .ap-detail{ font-size: 15.5px; }
-
   .page-arsip .dt-title{ font-size: 20px; }
   .page-arsip .dt-label{ font-size: 15px; }
   .page-arsip .dt-val{ font-size: 16px; }
   .page-arsip .dt-section-title{ font-size: 18px; }
   .page-arsip .dt-money{ font-size: 18px; }
-  .page-arsip .dt-doc-item,
-  .page-arsip .dt-download{ font-size: 15.5px; }
+  .page-arsip .ap-icbtn.is-disabled{ opacity: .45; cursor: not-allowed; pointer-events: auto; }
 
-  .page-arsip .ap-icbtn.is-disabled{
-    opacity: .45;
-    cursor: not-allowed;
-    pointer-events: auto;
-  }
+  /* POPUP */
+  .page-arsip .dt-modal{ position: fixed; inset: 0; z-index: 9999; display: none; }
+  .page-arsip .dt-modal.is-open{ display: flex; align-items: center; justify-content: center; padding: 10px; }
+  .page-arsip .dt-backdrop{ position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .page-arsip .dt-panel{ width: min(1440px, 96vw) !important; max-height: calc(100vh - 20px) !important; display: flex; position: relative; z-index: 1; border-radius: 24px !important; overflow: hidden; }
+  .page-arsip .dt-card{ width: 100%; display: flex; flex-direction: column; min-height: 0; border-radius: 24px !important; background: #fff; overflow: hidden; }
+  .page-arsip .dt-topbar{ position: sticky; top: 0; z-index: 3; background: #fff; padding: 18px 18px 12px; border-bottom: 1px solid #eef3f6; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .page-arsip .dt-topbar .dt-title{ flex: 1 1 auto; min-width: 0; margin: 0; line-height: 1.35; overflow-wrap: anywhere; transform: translate(6px, -8px) !important; }
+  .page-arsip .dt-close-inside{ margin-top: -8px; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 16px; display:grid; place-items:center; padding:0; position: static; }
+  .page-arsip .dt-close-inside i{ display:block; line-height: 1; font-size: 18px; }
+  .page-arsip .dt-topbar .dt-close-inside{ transform: translate(6px, -8px) !important; }
+  .page-arsip .dt-body{ padding: 16px 18px 18px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+  .page-arsip .dt-body::-webkit-scrollbar{ width: 10px; }
+  .page-arsip .dt-body::-webkit-scrollbar-track{ border-radius: 24px; background: transparent; margin: 10px 0; }
+  .page-arsip .dt-body::-webkit-scrollbar-thumb{ border-radius: 24px; background: rgba(15, 23, 42, .18); }
 
-  /* =========================
-     POPUP (tetap)
-  ========================= */
-  .page-arsip .dt-modal{
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    display: none;
-  }
-  .page-arsip .dt-modal.is-open{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px 8px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
+  /* KOLOM E NOTE */
+  .page-arsip .dt-doc-note{ margin-top: 14px; border: 1px solid #e8eef3; background: #f8fbfd; border-radius: 16px; padding: 12px 14px; display:flex; gap:12px; align-items:flex-start; }
+  .page-arsip .dt-doc-note-ic{ width: 40px; height: 40px; border-radius: 14px; display:grid; place-items:center; background: #ffffff; border: 1px solid #e8eef3; flex: 0 0 auto; }
+  .page-arsip .dt-doc-note-ic i{ font-size: 18px; line-height: 1; display:block; opacity: .9; }
+  .page-arsip .dt-doc-note-title{ font-size: 14px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
+  .page-arsip .dt-doc-note-desc{ font-size: 13.5px; color: #475569; line-height: 1.5; }
 
-  .page-arsip .dt-backdrop{
-    position: fixed;
-    inset: 0;
-  }
+  /* DOC CARD + tombol hapus */
+  .page-arsip .dt-doc-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+  @media (max-width: 900px){ .page-arsip .dt-doc-grid{ grid-template-columns: 1fr; } }
+  .page-arsip .dt-doc-card{ border: 1px solid #e8eef3; background:#fff; border-radius: 16px; padding: 12px 14px; display:flex; align-items:center; gap:12px; text-decoration:none; color: inherit; position: relative; }
+  .page-arsip .dt-doc-ic{ width: 44px; height: 44px; border-radius: 16px; display:grid; place-items:center; background:#f8fbfd; border: 1px solid #eef3f6; flex: 0 0 auto; }
+  .page-arsip .dt-doc-ic i{ font-size: 18px; }
+  .page-arsip .dt-doc-info{ min-width:0; flex:1; }
+  .page-arsip .dt-doc-title{ font-size: 14.5px; font-weight: 800; line-height: 1.35; overflow-wrap:anywhere; }
+  .page-arsip .dt-doc-sub{ font-size: 12.5px; color:#64748b; margin-top: 2px; overflow-wrap:anywhere; }
+  .page-arsip .dt-doc-act{ width: 36px; height: 36px; border-radius: 14px; display:grid; place-items:center; background:#f8fbfd; border: 1px solid #eef3f6; flex:0 0 auto; }
+  .page-arsip .dt-doc-act i{ font-size: 16px; }
+  .page-arsip .dt-doc-del{ position:absolute; top: 10px; right: 10px; width: 34px; height: 34px; border-radius: 14px; border: 1px solid #fee2e2; background: #fff; color:#ef4444; display:grid; place-items:center; cursor:pointer; }
+  .page-arsip .dt-doc-del i{ font-size: 16px; }
+  .page-arsip .dt-doc-card.is-deleting{ opacity: .55; pointer-events:none; }
 
-  .page-arsip .dt-panel{
-    width: min(1440px, 98vw) !important;
-    max-height: calc(100vh - 12px) !important;
-    display: flex;
-    position: relative;
-    z-index: 1;
-
-    border-radius: 24px !important;
-    overflow: hidden;
-  }
-
-  .page-arsip .dt-card{
-    width: 100%;
-    display: block;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    min-height: 0;
-
-    border-radius: 24px !important;
-    background: #fff;
-  }
-
-  .page-arsip .dt-card::-webkit-scrollbar{ width: 10px; }
-  .page-arsip .dt-card::-webkit-scrollbar-track{
-    border-radius: 24px;
-    background: transparent;
-    margin: 10px 0;
-  }
-  .page-arsip .dt-card::-webkit-scrollbar-thumb{
-    border-radius: 24px;
-    background: rgba(15, 23, 42, .18);
-  }
-
-  .page-arsip .dt-close-inside{
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    z-index: 2;
-    width: 44px;
-    height: 44px;
-    border-radius: 16px;
-    display:grid;
-    place-items:center;
-    padding:0;
-  }
-  .page-arsip .dt-close-inside i{
-    display:block;
-    line-height: 1;
-    font-size: 18px;
-  }
-
-  .page-arsip .dt-title{
-    position: static;
-    background: transparent;
-  }
-
-  /* ✅✅ NOTE KOLOM E (TAMPIL DI BAWAH DOKUMEN) */
-  .page-arsip .dt-doc-note{
-    margin-top: 14px;
-    border: 1px solid #e8eef3;
-    background: #f8fbfd;
-    border-radius: 16px;
-    padding: 12px 14px;
-    display:flex;
-    gap:12px;
-    align-items:flex-start;
-  }
-  .page-arsip .dt-doc-note-ic{
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    display:grid;
-    place-items:center;
-    background: #ffffff;
-    border: 1px solid #e8eef3;
-    flex: 0 0 auto;
-  }
-  .page-arsip .dt-doc-note-ic i{
-    font-size: 18px;
-    line-height: 1;
-    display:block;
-    opacity: .9;
-  }
-  .page-arsip .dt-doc-note-title{
-    font-size: 14px;
-    font-weight: 700;
-    margin-bottom: 2px;
-    color: #0f172a;
-  }
-  .page-arsip .dt-doc-note-desc{
-    font-size: 13.5px;
-    color: #475569;
-    line-height: 1.5;
-  }
-
-  /* =========================================================
-     BAGIAN BAWAH: pagination + print (tetap)
-  ========================================================= */
-  .page-arsip .ap-pagination-wrap{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    padding: 14px 18px 16px;
-    border-top: 2px solid #eef3f6;
-  }
-
-  .page-arsip .ap-page-info{
-    font-size: 13.5px;
-    color:#64748b;
-    white-space: nowrap;
-  }
-
-  .page-arsip .ap-pagination{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    flex-wrap:wrap;
-    justify-content:flex-end;
-  }
-
-  .page-arsip .ap-page-btn{
-    min-width: 36px;
-    height: 34px;
-    padding: 0 10px;
-    border-radius: 10px;
-    border: 1px solid #e6eef2;
-    background:#fff;
-    color:#0f172a;
-    font-size: 13px;
-    font-weight: 600;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    text-decoration:none;
-    transition: .15s ease;
-    user-select:none;
-  }
-
-  .page-arsip .ap-page-btn:hover{
-    border-color:#cfe2ea;
-    background:#f8fbfd;
-  }
-
-  .page-arsip .ap-page-btn.is-active{
-    border-color: transparent;
-    background: var(--navy2);
-    color:#fff;
-  }
-
-  .page-arsip .ap-page-btn.is-disabled{
-    opacity: .55;
-    pointer-events:none;
-    background:#f8fafc;
-  }
-
-  .page-arsip .ap-page-btn.is-ellipsis{
-    pointer-events:none;
-    background: transparent;
-    border-color: transparent;
-    min-width: 24px;
-    padding: 0 4px;
-  }
+  .page-arsip .ap-pagination-wrap{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 14px 18px 16px; border-top: 2px solid #eef3f6; }
+  .page-arsip .ap-page-info{ font-size: 13.5px; color:#64748b; white-space: nowrap; }
+  .page-arsip .ap-pagination{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .page-arsip .ap-page-btn{ min-width: 36px; height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid #e6eef2; background:#fff; color:#0f172a; font-size: 13px; font-weight: 600; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; transition: .15s ease; user-select:none; }
+  .page-arsip .ap-page-btn:hover{ border-color:#cfe2ea; background:#f8fbfd; }
+  .page-arsip .ap-page-btn.is-active{ border-color: transparent; background: var(--navy2); color:#fff; }
+  .page-arsip .ap-page-btn.is-disabled{ opacity: .55; pointer-events:none; background:#f8fafc; }
+  .page-arsip .ap-page-btn.is-ellipsis{ pointer-events:none; background: transparent; border-color: transparent; min-width: 24px; padding: 0 4px; }
 
   @media (max-width: 1100px){
     .page-arsip .ap-filter-row{ flex-wrap: wrap; }
     .page-arsip .ap-search{ flex: 1 1 320px; min-width: 260px; }
     .page-arsip .ap-select{ flex: 1 1 220px; min-width: 220px; }
-    .page-arsip .ap-pagination-wrap{
-      flex-direction: column;
-      align-items: flex-start;
-    }
+    .page-arsip .ap-pagination-wrap{ flex-direction: column; align-items: flex-start; }
     .page-arsip .ap-pagination{ justify-content:flex-start; }
-
-    .page-arsip .ap-header{
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .page-arsip .ap-header-right{
-      width:100%;
-      justify-content:flex-end;
-    }
+    .page-arsip .ap-header{ flex-direction: column; align-items: flex-start; }
+    .page-arsip .ap-header-right{ width:100%; justify-content:flex-end; }
   }
 
   @media print{
-    .dash-sidebar,
-    .ap-filter,
-    .ap-tools,
-    .ap-aksi,
-    .ap-head .ap-check,
-    .ap-row .ap-check,
-    .ap-header-right,
-    .dt-modal,
-    .ap-pagination-wrap{
-      display:none !important;
-    }
+    .dash-sidebar, .ap-filter, .ap-tools, .ap-aksi,
+    .ap-head .ap-check, .ap-row .ap-check,
+    .ap-header-right, .dt-modal, .ap-pagination-wrap{ display:none !important; }
 
     .dash-main{ width: 100% !important; }
     .dash-wrap{ display:block !important; }
-
     body{ background:#fff !important; }
     .dash-table{ box-shadow:none !important; }
 
     .page-arsip .ap-head,
     .page-arsip .ap-row{
-      grid-template-columns:
-        86px
-        1.25fr
-        2.45fr
-        1.55fr
-        1.10fr
-        1.25fr;
+      grid-template-columns: 86px 1.25fr 2.45fr 1.55fr 1.10fr 1.25fr;
       padding-left: 0 !important;
       padding-right: 0 !important;
       column-gap: 14px;
@@ -1076,6 +628,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   const selectAll = document.getElementById('apSelectAll');
   const unitEl    = document.getElementById('apUnitFilter');
   const filterEl  = document.getElementById('apStatusFilter');
@@ -1085,6 +638,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const refreshBtn = document.getElementById('apRefreshBtn');
   const deleteBtn  = document.getElementById('apDeleteBtn');
   const printBtn   = document.getElementById('apPrintBtn');
+
+  const bulkDeleteUrl = deleteBtn?.getAttribute('data-bulk-delete-url') || '/unit/arsip';
 
   const getRows = () => Array.from(document.querySelectorAll('.ap-row'));
   const getVisibleRows = () => getRows().filter(r => r.style.display !== 'none');
@@ -1186,8 +741,13 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  /**
+   * ✅ HAPUS ARSIP (REAL: DB)
+   * Pakai endpoint: DELETE /unit/arsip (unit.arsip.bulkDestroy)
+   * Body JSON: { ids: ["1","2", ...] }
+   */
   if(deleteBtn){
-    deleteBtn.addEventListener('click', function(){
+    deleteBtn.addEventListener('click', async function(){
       const ids = getCheckedIds();
       if(ids.length === 0){
         alert('Pilih minimal 1 arsip (atau pilih semua) untuk dihapus.');
@@ -1197,19 +757,50 @@ document.addEventListener('DOMContentLoaded', function () {
       const ok = confirm(`Hapus ${ids.length} arsip terpilih?`);
       if(!ok) return;
 
-      ids.forEach(id => {
-        const cb = document.querySelector(`.ap-row-check[value="${id}"]`);
-        const row = cb ? cb.closest('.ap-row') : null;
-        if(row) row.remove();
-      });
+      // UI lock
+      setBtnDisabled(deleteBtn, true);
 
-      if(selectAll){
-        selectAll.checked = false;
-        selectAll.indeterminate = false;
+      try{
+        const res = await fetch(bulkDeleteUrl, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf,
+          },
+          body: JSON.stringify({ ids })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if(!res.ok){
+          const msg = data?.message || 'Gagal menghapus arsip.';
+          alert(msg);
+          setBtnDisabled(deleteBtn, false);
+          return;
+        }
+
+        // sukses: remove rows dari table
+        ids.forEach(id => {
+          const cb = document.querySelector(`.ap-row-check[value="${id}"]`);
+          const row = cb ? cb.closest('.ap-row') : null;
+          if(row) row.remove();
+        });
+
+        if(selectAll){
+          selectAll.checked = false;
+          selectAll.indeterminate = false;
+        }
+
+        applyFilters();
+        alert(data?.message || 'Arsip terpilih berhasil dihapus.');
+
+      }catch(err){
+        alert('Terjadi error saat menghapus arsip.');
+      }finally{
+        // re-evaluate state
+        updateDeleteState();
       }
-
-      applyFilters();
-      alert('Arsip terpilih berhasil dihapus (dummy frontend).');
     });
   }
 
@@ -1250,9 +841,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // =========================
   // SORT NILAI KONTRAK
-  // =========================
   const btn   = document.getElementById('sortNilaiBtn');
   const icon  = document.getElementById('sortNilaiIcon');
   const table = document.querySelector('.ap-table');
@@ -1295,7 +884,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // MODAL DETAIL
+  // MODAL DETAIL (tetap sama)
   const modal = document.getElementById('dtModal');
   const closeBtn = document.getElementById('dtCloseBtn');
 
@@ -1310,12 +899,153 @@ document.addEventListener('DOMContentLoaded', function () {
   const elHps     = document.getElementById('dtHps');
   const elKontrak = document.getElementById('dtKontrak');
 
-  // ✅ KOLOM E (note)
   const elDocNoteWrap = document.getElementById('dtDocNoteWrap');
   const elDocNote     = document.getElementById('dtDocNote');
 
+  const docsEl = document.getElementById('dtDocList');
+  const emptyEl = document.getElementById('dtDocEmpty');
+
+  let currentPengadaanId = null;
+
+  const normalizeGroups = (raw) => {
+    if(!raw) return [];
+    if(!Array.isArray(raw) && typeof raw === 'object'){
+      return Object.keys(raw).map(k => ({ field: k, items: raw[k] }));
+    }
+    if(Array.isArray(raw)){
+      return [{ field: 'dokumen', items: raw }];
+    }
+    return [];
+  };
+
+  const safeText = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({
+    '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'
+  }[c]));
+
+  async function deleteDocFile({pengadaanId, field, path, cardEl}){
+    if(!pengadaanId || !field || !path) return;
+
+    const ok = confirm('Hapus file ini?');
+    if(!ok) return;
+
+    try{
+      if(cardEl) cardEl.classList.add('is-deleting');
+
+      const res = await fetch(`/unit/arsip/${pengadaanId}/dokumen`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf,
+        },
+        body: JSON.stringify({ field, path })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if(!res.ok){
+        const msg = data?.message || 'Gagal menghapus file.';
+        alert(msg);
+        if(cardEl) cardEl.classList.remove('is-deleting');
+        return;
+      }
+
+      if(cardEl) cardEl.remove();
+
+      const remain = docsEl ? docsEl.querySelectorAll('.dt-doc-card').length : 0;
+      if(emptyEl) emptyEl.hidden = remain > 0;
+
+    }catch(err){
+      alert('Terjadi error saat menghapus file.');
+      if(cardEl) cardEl.classList.remove('is-deleting');
+    }
+  }
+
+  const renderDocs = (raw) => {
+    if(!docsEl) return;
+    docsEl.innerHTML = '';
+
+    const groups = normalizeGroups(raw);
+
+    let total = 0;
+    groups.forEach(g => {
+      const items = Array.isArray(g.items) ? g.items : [];
+      total += items.length;
+    });
+
+    if(emptyEl) emptyEl.hidden = total > 0;
+    if(total === 0) return;
+
+    groups.forEach(group => {
+      const items = Array.isArray(group.items) ? group.items : [];
+      items.forEach(item => {
+        if(typeof item === 'string'){
+          const name = item.split('/').filter(Boolean).pop() || item;
+          const url = item.startsWith('http') ? item : (item.startsWith('/storage/') ? item : ('/storage/' + item.replace(/^\/+/,'')));
+          const card = document.createElement('a');
+          card.className = 'dt-doc-card';
+          card.href = url;
+          card.target = '_blank';
+          card.rel = 'noopener';
+
+          card.innerHTML = `
+            <div class="dt-doc-ic"><i class="bi bi-file-earmark-arrow-down"></i></div>
+            <div class="dt-doc-info">
+              <div class="dt-doc-title">${safeText(name)}</div>
+              <div class="dt-doc-sub">${safeText(group.field)}</div>
+            </div>
+            <div class="dt-doc-act"><i class="bi bi-download"></i></div>
+          `;
+          docsEl.appendChild(card);
+          return;
+        }
+
+        const url  = item?.url || '#';
+        const name = item?.name || (item?.path ? String(item.path).split('/').pop() : 'Dokumen');
+        const label = item?.label || group.field;
+        const path  = item?.path || '';
+
+        const cardWrap = document.createElement('div');
+        cardWrap.className = 'dt-doc-card';
+        cardWrap.style.cursor = 'default';
+
+        cardWrap.innerHTML = `
+          <a href="${safeText(url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;flex:1;min-width:0;">
+            <div class="dt-doc-ic"><i class="bi bi-file-earmark-arrow-down"></i></div>
+            <div class="dt-doc-info">
+              <div class="dt-doc-title">${safeText(name)}</div>
+              <div class="dt-doc-sub">${safeText(label)}</div>
+            </div>
+            <div class="dt-doc-act"><i class="bi bi-download"></i></div>
+          </a>
+          <button type="button" class="dt-doc-del" title="Hapus file">
+            <i class="bi bi-trash3"></i>
+          </button>
+        `;
+
+        const delBtn = cardWrap.querySelector('.dt-doc-del');
+        if(delBtn){
+          delBtn.addEventListener('click', function(ev){
+            ev.preventDefault();
+            ev.stopPropagation();
+            deleteDocFile({
+              pengadaanId: currentPengadaanId,
+              field: group.field,
+              path: path,
+              cardEl: cardWrap
+            });
+          });
+        }
+
+        docsEl.appendChild(cardWrap);
+      });
+    });
+  };
+
   function openModal(payload){
     if(!modal) return;
+
+    currentPengadaanId = payload.id || null;
 
     if(elTitle)   elTitle.textContent   = payload.title || '-';
     if(elUnit)    elUnit.textContent    = payload.unit || '-';
@@ -1328,7 +1058,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if(elHps)     elHps.textContent     = payload.hps || '-';
     if(elKontrak) elKontrak.textContent = payload.kontrak || '-';
 
-    // ✅ set note kolom E
+    try{ renderDocs(payload.docs || {}); }catch(e){ if(docsEl) docsEl.innerHTML=''; if(emptyEl) emptyEl.hidden=false; }
+
     if(elDocNoteWrap && elDocNote){
       const note = (payload.docnote || '').trim();
       if(note){
@@ -1352,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.body.classList.remove('modal-open');
     document.body.style.overflow = '';
     modal.setAttribute('aria-hidden', 'true');
+    currentPengadaanId = null;
   }
 
   document.addEventListener('click', function(e){
@@ -1360,6 +1092,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     e.preventDefault();
     openModal({
+      id: link.dataset.id,
       title: link.dataset.title,
       unit: link.dataset.unit,
       tahun: link.dataset.tahun,
@@ -1370,9 +1103,8 @@ document.addEventListener('DOMContentLoaded', function () {
       pagu: link.dataset.pagu,
       hps: link.dataset.hps,
       kontrak: link.dataset.kontrak,
-
-      // ✅ ambil kolom E dari data-attribute
-      docnote: link.dataset.docnote
+      docnote: link.dataset.docnote,
+      docs: (function(){ try{ return link.dataset.docs ? JSON.parse(link.dataset.docs) : {}; }catch(e){ return {}; } })()
     });
   });
 
