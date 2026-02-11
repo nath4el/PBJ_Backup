@@ -26,13 +26,13 @@ class Pengadaan extends Model
         // B. Status Akses Arsip
         'status_arsip',
 
-        // C. Anggaran (bigint di PostgreSQL)
+        // C. Anggaran
         'pagu_anggaran',
         'hps',
         'nilai_kontrak',
         'nama_rekanan',
 
-        // D. Dokumen Pengadaan (jsonb)
+        // D. Dokumen Pengadaan (json/jsonb)
         'dokumen_kak',
         'dokumen_hps',
         'dokumen_spesifikasi_teknis',
@@ -72,7 +72,7 @@ class Pengadaan extends Model
         'bast_akhir',
         'dokumen_pendukung_lainya',
 
-        // E. Dokumen Tidak Dipersyaratkan (jsonb)
+        // E. Dokumen Tidak Dipersyaratkan (json/jsonb)
         'dokumen_tidak_dipersyaratkan',
 
         // Audit
@@ -80,9 +80,9 @@ class Pengadaan extends Model
     ];
 
     /**
-     * ✅ CASTS sesuai struktur database PostgreSQL
-     * bigint -> integer
-     * jsonb  -> array
+     * ✅ CASTS
+     * - angka -> integer (aman untuk MySQL + PostgreSQL)
+     * - json/jsonb -> array
      */
     protected $casts = [
         'tahun'         => 'integer',
@@ -93,7 +93,7 @@ class Pengadaan extends Model
         'hps'           => 'integer',
         'nilai_kontrak' => 'integer',
 
-        // jsonb dokumen
+        // json/jsonb dokumen
         'dokumen_kak' => 'array',
         'dokumen_hps' => 'array',
         'dokumen_spesifikasi_teknis' => 'array',
@@ -133,7 +133,7 @@ class Pengadaan extends Model
         'bast_akhir' => 'array',
         'dokumen_pendukung_lainya' => 'array',
 
-        // jsonb kolom E
+        // json/jsonb kolom E
         'dokumen_tidak_dipersyaratkan' => 'array',
     ];
 

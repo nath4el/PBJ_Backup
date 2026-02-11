@@ -114,6 +114,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])
             ->name('arsip.pbj');
 
+        // ✅ EDIT + UPDATE (FIX: WAJIB ADA supaya EditArsip jalan)
         Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])
             ->name('arsip.edit');
 

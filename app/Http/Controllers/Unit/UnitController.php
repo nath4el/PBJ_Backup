@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Validator;
 
 class UnitController extends Controller
 {
@@ -190,24 +191,22 @@ class UnitController extends Controller
             return [
                 'id' => $p->id,
                 'pekerjaan' => ($p->nama_pekerjaan ?? '-'),
-
                 'id_rup' => $p->id_rup ?? '-',
                 'tahun' => $p->tahun ?? null,
                 'metode_pbj' => $p->jenis_pengadaan ?? '-',
                 'jenis_pengadaan' => $p->jenis_pengadaan ?? '-',
                 'status_pekerjaan' => $p->status_pekerjaan ?? '-',
                 'status_arsip' => $p->status_arsip ?? '-',
-
                 'nilai_kontrak' => $this->formatRupiah($p->nilai_kontrak),
                 'pagu_anggaran' => $this->formatRupiah($p->pagu_anggaran),
                 'hps' => $this->formatRupiah($p->hps),
-
                 'nama_rekanan' => $p->nama_rekanan ?? '-',
                 'unit' => $p->unit?->nama ?? '-',
 
-                // ✅ penting: setiap item dokumen punya url route('unit.arsip.dokumen.show', ...)
+                // ✅ dokumen siap untuk modal detail (punya url showDokumen)
                 'dokumen' => $this->buildDokumenList($p),
 
+                // ✅ kolom E (array)
                 'dokumen_tidak_dipersyaratkan' => $this->normalizeArray($p->dokumen_tidak_dipersyaratkan),
             ];
         });
@@ -230,26 +229,25 @@ class UnitController extends Controller
             ->where('unit_id', $unitId)
             ->firstOrFail();
 
-        $arsip = (object)[
-            'id' => $pengadaan->id,
-            'judul' => $pengadaan->nama_pekerjaan ?? '-',
-            'tahun' => $pengadaan->tahun ?? (int)date('Y'),
-            'metode' => $pengadaan->jenis_pengadaan ?? '-',
-            'status' => $pengadaan->status_pekerjaan ?? '-',
-        ];
+        $selectedUnitId = $unitId;
+        $selectedUnitName = $unitId ? Unit::find($unitId)?->nama : null;
+        $units = Unit::orderBy('nama')->get();
 
-        return view('Unit.EditArsip', compact('unitName', 'arsip'));
+        $pengadaan->dokumen_tidak_dipersyaratkan = $this->normalizeArray($pengadaan->dokumen_tidak_dipersyaratkan);
+        $dokumenExisting = $this->buildDokumenList($pengadaan);
+
+        return view('Unit.EditArsip', compact(
+            'unitName',
+            'pengadaan',
+            'units',
+            'selectedUnitId',
+            'selectedUnitName',
+            'dokumenExisting'
+        ));
     }
 
     public function arsipUpdate(Request $request, $id)
     {
-        $request->validate([
-            'judul'  => 'nullable|string|max:255',
-            'tahun'  => 'nullable|integer|min:2000|max:' . (date('Y') + 5),
-            'metode' => 'nullable|string|max:255',
-            'status' => 'nullable|string|max:255',
-        ]);
-
         $unitId = auth()->user()->unit_id;
         if (!$unitId) {
             abort(403, 'Akun unit belum terhubung ke unit_id.');
@@ -259,16 +257,45 @@ class UnitController extends Controller
             ->where('unit_id', $unitId)
             ->firstOrFail();
 
-        if ($request->filled('judul'))  $pengadaan->nama_pekerjaan = $request->judul;
-        if ($request->filled('tahun'))  $pengadaan->tahun = (int)$request->tahun;
-        if ($request->filled('metode')) $pengadaan->jenis_pengadaan = $request->metode;
-        if ($request->filled('status')) $pengadaan->status_pekerjaan = $request->status;
+        // ✅ ambil & normalisasi input (biar A/B/C/E juga “nyambung” walau nama input beda)
+        $payload = $this->normalizedPengadaanPayload($request, (int)$unitId);
 
-        $pengadaan->save();
+        Validator::make($payload, $this->rulesPengadaan())->validate();
 
-        return redirect()
-            ->route('unit.arsip')
-            ->with('success', 'Arsip berhasil diperbarui.');
+        DB::beginTransaction();
+        try {
+            // A–C–E (NON FILE)
+            $pengadaan->unit_id          = (int)$unitId; // lock
+            $pengadaan->tahun            = (int)$payload['tahun'];
+            $pengadaan->nama_pekerjaan   = $payload['nama_pekerjaan'];
+            $pengadaan->id_rup           = $payload['id_rup'];
+            $pengadaan->jenis_pengadaan  = $payload['jenis_pengadaan'];
+            $pengadaan->status_pekerjaan = $payload['status_pekerjaan'];
+            $pengadaan->status_arsip     = $payload['status_arsip'];
+
+            $pengadaan->pagu_anggaran    = $payload['pagu_anggaran'];
+            $pengadaan->hps              = $payload['hps'];
+            $pengadaan->nilai_kontrak    = $payload['nilai_kontrak'];
+            $pengadaan->nama_rekanan     = $payload['nama_rekanan'];
+
+            $pengadaan->dokumen_tidak_dipersyaratkan = $payload['dokumen_tidak_dipersyaratkan'];
+
+            // D (FILE): append ke existing
+            $this->handleUploadDokumenToModel($request, $pengadaan, true);
+
+            $pengadaan->save();
+            DB::commit();
+
+            return redirect()
+                ->route('unit.arsip')
+                ->with('success', 'Arsip berhasil diperbarui.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors(['update' => 'Gagal memperbarui arsip. Silakan coba lagi.']);
+        }
     }
 
     public function arsipDestroy(Request $request, $id)
@@ -369,91 +396,30 @@ class UnitController extends Controller
             abort(403, 'Akun unit belum terhubung ke unit_id.');
         }
 
-        $data = $request->validate([
-            'unit_id' => 'nullable|integer',
+        // ✅ ambil & normalisasi input (A/B/C/E)
+        $payload = $this->normalizedPengadaanPayload($request, (int)$unitId);
+        $payload['created_by'] = auth()->id();
 
-            'tahun' => 'required|integer|min:2000|max:' . (date('Y') + 5),
-            'nama_pekerjaan' => 'nullable|string|max:255',
-            'id_rup' => 'nullable|string|max:255',
-            'jenis_pengadaan' => 'required|string|max:100',
-            'status_pekerjaan' => 'required|string|max:100',
-            'status_arsip' => 'required|in:Publik,Privat',
+        Validator::make($payload, $this->rulesPengadaan())->validate();
 
-            'pagu_anggaran' => 'nullable|string|max:50',
-            'hps' => 'nullable|string|max:50',
-            'nilai_kontrak' => 'nullable|string|max:50',
-            'nama_rekanan' => 'nullable|string|max:255',
-
-            'dokumen_tidak_dipersyaratkan' => 'nullable|array',
-            'dokumen_tidak_dipersyaratkan_json' => 'nullable|string',
-        ]);
-
-        $toInt = function ($v) {
-            if ($v === null) return null;
-            $num = preg_replace('/[^0-9]/', '', (string)$v);
-            return $num === '' ? null : (int)$num;
-        };
-
-        $data['pagu_anggaran'] = $toInt($data['pagu_anggaran'] ?? null);
-        $data['hps'] = $toInt($data['hps'] ?? null);
-        $data['nilai_kontrak'] = $toInt($data['nilai_kontrak'] ?? null);
-
-        $docTidak = [];
-        if (!empty($data['dokumen_tidak_dipersyaratkan']) && is_array($data['dokumen_tidak_dipersyaratkan'])) {
-            $docTidak = $data['dokumen_tidak_dipersyaratkan'];
-        } elseif (!empty($data['dokumen_tidak_dipersyaratkan_json'])) {
-            $decoded = json_decode($data['dokumen_tidak_dipersyaratkan_json'], true);
-            if (is_array($decoded)) $docTidak = $decoded;
-        }
-        $data['dokumen_tidak_dipersyaratkan'] = array_values($docTidak);
-        unset($data['dokumen_tidak_dipersyaratkan_json']);
-
-        $data['unit_id'] = (int)$unitId;
-        $data['created_by'] = auth()->id();
-
-        $pengadaan = null;
-
+        DB::beginTransaction();
         try {
-            $pengadaan = Pengadaan::create($data);
+            $pengadaan = Pengadaan::create($payload);
 
-            $fileFields = array_keys($this->dokumenFieldLabels());
-
-            foreach ($fileFields as $field) {
-                if (!$request->hasFile($field)) continue;
-
-                $uploaded = $request->file($field);
-                $files = is_array($uploaded) ? $uploaded : [$uploaded];
-
-                $paths = [];
-
-                foreach ($files as $file) {
-                    if (!$file || !$file->isValid()) continue;
-
-                    $original = $file->getClientOriginalName();
-                    $ext = strtolower($file->getClientOriginalExtension());
-                    $base = pathinfo($original, PATHINFO_FILENAME);
-
-                    $safeBase = Str::slug($base);
-                    if ($safeBase === '') $safeBase = 'dokumen';
-
-                    $filename = $safeBase . '_' . date('Ymd_His') . '_' . Str::random(6) . '.' . $ext;
-
-                    $stored = $file->storeAs("pengadaan/{$pengadaan->id}/{$field}", $filename, 'public');
-                    if ($stored) $paths[] = $stored;
-                }
-
-                if (count($paths) > 0) {
-                    $pengadaan->{$field} = $paths;
-                }
-            }
-
+            // D (FILE)
+            $this->handleUploadDokumenToModel($request, $pengadaan, false);
             $pengadaan->save();
+
+            DB::commit();
 
             return redirect()
                 ->route('unit.arsip')
                 ->with('success', 'Pengadaan berhasil disimpan.');
         } catch (\Throwable $e) {
-            if ($pengadaan instanceof Pengadaan) {
+            DB::rollBack();
+
+            // cleanup folder bila sempat tercipta
+            if (isset($pengadaan) && $pengadaan instanceof Pengadaan) {
                 try { Storage::disk('public')->deleteDirectory("pengadaan/{$pengadaan->id}"); } catch (\Throwable $ex) {}
                 try { $pengadaan->delete(); } catch (\Throwable $ex) {}
             }
@@ -488,11 +454,7 @@ class UnitController extends Controller
 
         if (!$matchPath || !Storage::disk('public')->exists($matchPath)) abort(404);
 
-        /**
-         * ✅ FIX UTAMA:
-         * redirect ke file-viewer pakai /storage/... saja (bukan URL /unit/arsip/...),
-         * supaya tidak double wrap /file-viewer?file=http://.../file-viewer...
-         */
+        // ✅ redirect ke file-viewer pakai /storage/...
         $publicUrl = '/storage/' . ltrim($matchPath, '/');
         return redirect()->route('file.viewer', ['file' => $publicUrl]);
     }
@@ -505,7 +467,6 @@ class UnitController extends Controller
     {
         $raw = (string)$request->query('file', '');
 
-        // decode berulang (maks 2x) biar handle nested encoding
         $file = $raw;
         for ($i = 0; $i < 2; $i++) {
             $dec = urldecode($file);
@@ -513,7 +474,6 @@ class UnitController extends Controller
             $file = $dec;
         }
 
-        // kalau ternyata file= berisi URL file-viewer lagi → ambil inner file=
         for ($i = 0; $i < 2; $i++) {
             $parts = parse_url($file);
             if (!is_array($parts)) break;
@@ -529,7 +489,6 @@ class UnitController extends Controller
             break;
         }
 
-        // normalize lagi
         $file = trim($file);
         for ($i = 0; $i < 2; $i++) {
             $dec = urldecode($file);
@@ -537,7 +496,6 @@ class UnitController extends Controller
             $file = $dec;
         }
 
-        // ✅ VALIDASI: hanya boleh /storage/... (atau absolute URL host sama & path /storage)
         $ok = false;
         $finalUrl = $file;
 
@@ -563,7 +521,6 @@ class UnitController extends Controller
             abort(403, 'FILE TIDAK DIIZINKAN.');
         }
 
-        // OPTIONAL: pastikan file fisik memang ada (mapping /storage/* -> disk public)
         $publicPath = ltrim($finalUrl, '/');                 // storage/...
         $diskPath   = preg_replace('#^storage/#', '', $publicPath); // pengadaan/...
 
@@ -686,6 +643,140 @@ class UnitController extends Controller
         return redirect()->route('unit.kelola.akun')->with('success', 'Akun berhasil diperbarui.');
     }
 
+    // =========================
+    // HELPERS (PENTING)
+    // =========================
+
+    /**
+     * ✅ Rules untuk A/B/C/E (bagian “selain D”)
+     */
+    private function rulesPengadaan(): array
+    {
+        return [
+            'tahun' => 'required|integer|min:2000|max:' . (date('Y') + 5),
+            'nama_pekerjaan' => 'nullable|string|max:255',
+            'id_rup' => 'nullable|string|max:255',
+            'jenis_pengadaan' => 'required|string|max:100',
+            'status_pekerjaan' => 'required|string|max:100',
+            'status_arsip' => 'required|in:Publik,Privat',
+
+            'pagu_anggaran' => 'nullable|integer|min:0',
+            'hps' => 'nullable|integer|min:0',
+            'nilai_kontrak' => 'nullable|integer|min:0',
+            'nama_rekanan' => 'nullable|string|max:255',
+
+            'dokumen_tidak_dipersyaratkan' => 'nullable|array',
+        ];
+    }
+
+    /**
+     * ✅ Ini kunci biar A/B/C/E nyambung walau nama input di blade beda-beda.
+     * Kamu boleh punya input: pekerjaan/judul/nama_pekerjaan, idrup/id_rup, pagu/pagu_anggaran, dll.
+     */
+    private function normalizedPengadaanPayload(Request $request, int $unitId): array
+    {
+        $pick = function(array $keys, $default = null) use ($request) {
+            foreach ($keys as $k) {
+                $v = $request->input($k);
+                if ($v !== null && $v !== '') return $v;
+            }
+            return $default;
+        };
+
+        $toIntMoney = function($v) {
+            if ($v === null) return null;
+            $num = preg_replace('/[^0-9]/', '', (string)$v);
+            return $num === '' ? null : (int)$num;
+        };
+
+        // Kolom E bisa datang dari: array checkbox/tag input atau hidden JSON
+        $docTidak = [];
+        $arrE = $request->input('dokumen_tidak_dipersyaratkan');
+        if (is_array($arrE)) {
+            $docTidak = $arrE;
+        } else {
+            $jsonE = $request->input('dokumen_tidak_dipersyaratkan_json');
+            if (is_string($jsonE) && trim($jsonE) !== '') {
+                $decoded = json_decode($jsonE, true);
+                if (is_array($decoded)) $docTidak = $decoded;
+            } else {
+                // fallback: kalau kamu punya textarea/field lain untuk note E
+                $fallbackText = $pick(['doc_note','dokumen_e','kolom_e'], '');
+                if (is_string($fallbackText) && trim($fallbackText) !== '') {
+                    $docTidak = [trim($fallbackText)];
+                }
+            }
+        }
+        $docTidak = array_values(array_filter(array_map(function($x){
+            $s = is_string($x) ? trim($x) : $x;
+            return ($s === '' || $s === null) ? null : $s;
+        }, $docTidak)));
+
+        // Status arsip kadang dikirim "Private" di UI -> samakan ke "Privat"
+        $statusArsip = (string)$pick(['status_arsip','akses','statusAkses'], 'Privat');
+        if (strtolower($statusArsip) === 'private') $statusArsip = 'Privat';
+
+        return [
+            'unit_id' => (int)$unitId, // lock
+            'tahun' => (int)$pick(['tahun','year'], (int)date('Y')),
+
+            // A
+            'nama_pekerjaan' => $pick(['nama_pekerjaan','pekerjaan','judul','namaPekerjaan'], null),
+            'id_rup' => $pick(['id_rup','idrup','id_rup_paket','idRup'], null),
+            'jenis_pengadaan' => $pick(['jenis_pengadaan','metode_pbj','metode','jenis_pbj'], null),
+            'status_pekerjaan' => $pick(['status_pekerjaan','status','statusPekerjaan'], null),
+
+            // B
+            'status_arsip' => $statusArsip,
+
+            // C
+            'pagu_anggaran' => $toIntMoney($pick(['pagu_anggaran','pagu'], null)),
+            'hps' => $toIntMoney($pick(['hps'], null)),
+            'nilai_kontrak' => $toIntMoney($pick(['nilai_kontrak','kontrak','nilai'], null)),
+            'nama_rekanan' => $pick(['nama_rekanan','rekanan'], null),
+
+            // E
+            'dokumen_tidak_dipersyaratkan' => $docTidak,
+        ];
+    }
+
+    /**
+     * Upload dokumen (D) ke field json array pada model.
+     * $append=true untuk arsipUpdate (gabung dengan existing), false untuk store (replace).
+     */
+    private function handleUploadDokumenToModel(Request $request, Pengadaan $pengadaan, bool $append = true): void
+    {
+        $fileFields = array_keys($this->dokumenFieldLabels());
+
+        // (opsional tapi bagus) validasi file
+        // note: kalau kamu pakai multiple, name="dokumen_kak[]" dsb, Laravel tetap detect array
+        foreach ($fileFields as $field) {
+            if (!$request->hasFile($field)) continue;
+
+            $uploaded = $request->file($field);
+            $files = is_array($uploaded) ? $uploaded : [$uploaded];
+
+            $paths = $append ? $this->normalizeArray($pengadaan->{$field}) : [];
+
+            foreach ($files as $file) {
+                if (!$file || !$file->isValid()) continue;
+
+                $ext = strtolower($file->getClientOriginalExtension());
+                $base = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+
+                $safeBase = Str::slug($base);
+                if ($safeBase === '') $safeBase = 'dokumen';
+
+                $filename = $safeBase . '_' . date('Ymd_His') . '_' . Str::random(6) . '.' . $ext;
+
+                $stored = $file->storeAs("pengadaan/{$pengadaan->id}/{$field}", $filename, 'public');
+                if ($stored) $paths[] = $stored;
+            }
+
+            $pengadaan->{$field} = array_values($paths);
+        }
+    }
+
     private function buildDokumenList(Pengadaan $p): array
     {
         $labels = $this->dokumenFieldLabels();
@@ -708,7 +799,6 @@ class UnitController extends Controller
                     'label' => $label,
                     'name'  => $file,
                     'path'  => $path,
-                    // ✅ URL PREVIEW (controller showDokumen -> redirect file.viewer)
                     'url'   => route('unit.arsip.dokumen.show', [
                         'id' => $p->id,
                         'field' => $field,

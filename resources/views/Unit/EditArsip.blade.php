@@ -21,20 +21,38 @@
 <body class="dash-body">
 @php
   // =========================
-  // PATCH: BIAR TIDAK ERROR DI HALAMAN EDIT
+  // ✅ FIX UTAMA: SAMAKAN DENGAN CONTROLLER
+  // Controller kamu ngirimnya: $pengadaan, bukan $arsip
+  // Jadi kita terima dua-duanya (biar aman)
   // =========================
   $arsip = $arsip ?? null;
+  $pengadaan = $pengadaan ?? $arsip; // ✅ sumber data utama
+  $arsip = $pengadaan; // biar variabel lama tetap jalan
 
-  // dummy frontend (nanti backend tinggal ganti)
-  $unitName = "Fakultas Teknik";
+  // ✅ ambil dari controller kalau ada, fallback dummy
+  $unitName = $unitName ?? (auth()->user()->name ?? "Unit Kerja");
 
-  // opsi dummy dropdown
-  $tahunOptions = [2022, 2023, 2024, 2025, 2026];
-  $unitOptions  = ["Fakultas Teknik", "Fakultas Hukum", "Fakultas Ekonomi dan Bisnis"];
-  $jenisPengadaanOptions = ["Tender", "E-Katalog", "Pengadaan Langsung", "Seleksi", "Penunjukan Langsung"];
-  $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+  // ✅ opsi dropdown dari controller (kalau ada)
+  // NOTE: di UnitController@arsipEdit kamu kirim: $units, $selectedUnitId, $selectedUnitName
+  $units = $units ?? collect();
+  $selectedUnitId = $selectedUnitId ?? (auth()->user()->unit_id ?? null);
+  $selectedUnitName = $selectedUnitName ?? ($units->firstWhere('id', $selectedUnitId)->nama ?? null);
 
-  // getter aman
+  // ✅ tahun dropdown: boleh dari controller (kalau belum ada, fallback)
+  $tahunOptions = $tahunOptions ?? [2022, 2023, 2024, 2025, 2026];
+
+  // ✅ options yang konsisten dengan dashboard/UnitController (metode pengadaan)
+  $jenisPengadaanOptions = $jenisPengadaanOptions ?? [
+    "Pengadaan Langsung",
+    "Penunjukan Langsung",
+    "E-Purchasing / E-Catalog",
+    "Tender Terbatas",
+    "Tender Terbuka",
+    "Swakelola",
+  ];
+  $statusPekerjaanOptions = $statusPekerjaanOptions ?? ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+
+  // getter aman (obj/array)
   $get = function($source, string $key){
     if(!$source) return null;
     if(is_object($source)) return $source->$key ?? null;
@@ -42,7 +60,7 @@
     return null;
   };
 
-  // old() prioritas
+  // old() prioritas → lalu data $arsip/$pengadaan
   $val = function(string $oldKey, array $attrs = []) use ($arsip, $get){
     $old = old($oldKey);
     if($old !== null) return $old;
@@ -54,7 +72,7 @@
     return null;
   };
 
-  // status arsip
+  // ✅ status arsip sesuai field DB: status_arsip
   $statusArsipVal = $val('status_arsip', ['status_arsip']) ?? 'Publik';
 
   // helper parse file existing (support: string, json array, array)
@@ -152,13 +170,18 @@
     ['key'=>'dokumen_pendukung_lainya','label'=>'Dokumen Pendukung Lainya'],
   ];
 
-  // ✅ nilai awal Kolom E (kalau ada data lama / old())
-  // prioritas: old array -> field arsip -> fallback null
+  // ✅ nilai awal Kolom E (field DB): dokumen_tidak_dipersyaratkan
   $eSelectedRaw = old('dokumen_tidak_dipersyaratkan');
   if($eSelectedRaw === null){
     $eSelectedRaw = $val('dokumen_tidak_dipersyaratkan', ['dokumen_tidak_dipersyaratkan']) ?? ($arsip ? $get($arsip,'dokumen_tidak_dipersyaratkan') : null);
   }
   $eSelected = $parseList($eSelectedRaw);
+
+  // ✅ Unit role: WAJIB kirim unit_id (bukan unit_kerja)
+  $unitIdHidden = (int)($selectedUnitId ?? auth()->user()->unit_id ?? 0);
+
+  // ✅ id arsip
+  $arsipId = $arsip ? (int)$get($arsip,'id') : 0;
 @endphp
 
 <div class="dash-wrap">
@@ -175,7 +198,7 @@
       </div>
     </div>
 
-        <div class="dash-unitbox">
+    <div class="dash-unitbox">
       <div class="dash-unit-label">Unit Kerja :</div>
       <div class="dash-unit-name">{{ $unitName }}</div>
     </div>
@@ -196,10 +219,10 @@
         Tambah Pengadaan
       </a>
 
-       <a class="dash-link" href="{{ route('unit.kelola.akun') }}">
-    <span class="ic"><i class="bi bi-person-gear"></i></span>
-    Kelola Akun
-  </a>
+      <a class="dash-link" href="{{ route('unit.kelola.akun') }}">
+        <span class="ic"><i class="bi bi-person-gear"></i></span>
+        Kelola Akun
+      </a>
     </nav>
 
     <div class="dash-side-actions">
@@ -231,10 +254,13 @@
     </header>
 
     <form id="editForm"
-          action="{{ $arsip ? route('unit.arsip.update', $get($arsip,'id')) : url('/unit/pengadaan/store') }}"
+          action="{{ $arsip ? route('unit.arsip.update', $arsipId) : url('/unit/pengadaan/store') }}"
           method="POST" class="tp-form" enctype="multipart/form-data">
       @csrf
       @if($arsip) @method('PUT') @endif
+
+      {{-- ✅ FIX: kirim unit_id yang benar (DB) --}}
+      <input type="hidden" name="unit_id" value="{{ $unitIdHidden }}">
 
       {{-- A. Informasi Umum --}}
       <section class="dash-table tp-cardbox" style="border-radius:14px; overflow:visible; margin-bottom:14px;">
@@ -252,21 +278,20 @@
                   <select name="tahun" class="tp-select" required>
                     <option value="" {{ $val('tahun',['tahun']) ? '' : 'selected' }} disabled hidden>Tahun</option>
                     @foreach($tahunOptions as $t)
-                      <option value="{{ $t }}" @selected($val('tahun',['tahun']) == $t)>{{ $t }}</option>
+                      <option value="{{ $t }}" @selected((string)$val('tahun',['tahun']) === (string)$t)>{{ $t }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
 
+              {{-- ✅ FIX: Unit Kerja di Unit role tidak boleh pilih nama string,
+                      yang dipakai DB adalah unit_id, jadi tampilkan saja (disabled) --}}
               <div class="tp-field">
                 <label class="tp-label">Unit Kerja</label>
                 <div class="tp-control">
-                  <select name="unit_kerja" class="tp-select" required>
-                    <option value="" {{ $val('unit_kerja',['unit_kerja','unit']) ? '' : 'selected' }} disabled hidden>Fakultas</option>
-                    @foreach($unitOptions as $u)
-                      <option value="{{ $u }}" @selected($val('unit_kerja',['unit_kerja','unit']) == $u)>{{ $u }}</option>
-                    @endforeach
+                  <select class="tp-select" disabled>
+                    <option selected>{{ $selectedUnitName ?? 'Unit Kerja' }}</option>
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
@@ -275,14 +300,14 @@
               <div class="tp-field tp-full">
                 <label class="tp-label">Nama Pekerjaan</label>
                 <input type="text" name="nama_pekerjaan" class="tp-input"
-                       value="{{ $val('nama_pekerjaan',['nama_pekerjaan','pekerjaan','judul']) }}"
+                       value="{{ $val('nama_pekerjaan',['nama_pekerjaan']) }}"
                        placeholder="Nama Pekerjaan" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">ID RUP</label>
                 <input type="text" name="id_rup" class="tp-input"
-                       value="{{ $val('id_rup',['id_rup','idrup','id_rup_pengadaan']) }}"
+                       value="{{ $val('id_rup',['id_rup']) }}"
                        placeholder="RUP-xxxx-xxxx-xxx-xx" />
               </div>
 
@@ -290,9 +315,9 @@
                 <label class="tp-label">Jenis Pengadaan</label>
                 <div class="tp-control">
                   <select name="jenis_pengadaan" class="tp-select" required>
-                    <option value="" {{ $val('jenis_pengadaan',['jenis_pengadaan','jenis']) ? '' : 'selected' }} disabled hidden>Pilih Jenis Pengadaan</option>
+                    <option value="" {{ $val('jenis_pengadaan',['jenis_pengadaan']) ? '' : 'selected' }} disabled hidden>Pilih Jenis Pengadaan</option>
                     @foreach($jenisPengadaanOptions as $jp)
-                      <option value="{{ $jp }}" @selected($val('jenis_pengadaan',['jenis_pengadaan','jenis']) == $jp)>{{ $jp }}</option>
+                      <option value="{{ $jp }}" @selected((string)$val('jenis_pengadaan',['jenis_pengadaan']) === (string)$jp)>{{ $jp }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
@@ -303,9 +328,9 @@
                 <label class="tp-label">Status Pekerjaan</label>
                 <div class="tp-control">
                   <select name="status_pekerjaan" class="tp-select" required>
-                    <option value="" {{ $val('status_pekerjaan',['status_pekerjaan','status']) ? '' : 'selected' }} disabled hidden>Pilih Status Pekerjaan</option>
+                    <option value="" {{ $val('status_pekerjaan',['status_pekerjaan']) ? '' : 'selected' }} disabled hidden>Pilih Status Pekerjaan</option>
                     @foreach($statusPekerjaanOptions as $sp)
-                      <option value="{{ $sp }}" @selected($val('status_pekerjaan',['status_pekerjaan','status']) == $sp)>{{ $sp }}</option>
+                      <option value="{{ $sp }}" @selected((string)$val('status_pekerjaan',['status_pekerjaan']) === (string)$sp)>{{ $sp }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
@@ -361,7 +386,7 @@
               <div class="tp-field">
                 <label class="tp-label">Pagu Anggaran (Rp)</label>
                 <input type="text" name="pagu_anggaran" class="tp-input"
-                       value="{{ $val('pagu_anggaran',['pagu_anggaran','pagu']) }}"
+                       value="{{ $val('pagu_anggaran',['pagu_anggaran']) }}"
                        placeholder="Rp" />
               </div>
 
@@ -375,14 +400,14 @@
               <div class="tp-field">
                 <label class="tp-label">Nilai Kontrak (Rp)</label>
                 <input type="text" name="nilai_kontrak" class="tp-input"
-                       value="{{ $val('nilai_kontrak',['nilai_kontrak','kontrak','nilai']) }}"
+                       value="{{ $val('nilai_kontrak',['nilai_kontrak']) }}"
                        placeholder="Rp" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">Nama Rekanan</label>
                 <input type="text" name="nama_rekanan" class="tp-input"
-                       value="{{ $val('nama_rekanan',['nama_rekanan','rekanan']) }}"
+                       value="{{ $val('nama_rekanan',['nama_rekanan']) }}"
                        placeholder="Nama Rekanan" />
               </div>
             </div>
@@ -407,8 +432,17 @@
               @foreach($docSessions as $s)
                 @php
                   $key = $s['key'];
-                  $existingRaw = $arsip ? $get($arsip, $key) : null;
-                  $existingFiles = $parseFiles($existingRaw);
+
+                  // ✅ ambil existing dari controller jika ada (dokumenExisting dari UnitController@arsipEdit)
+                  // UnitController kamu mengirim: $dokumenExisting = buildDokumenList($pengadaan)
+                  // Struktur: $dokumenExisting[$field] = [ ['path'=>..., 'url'=>..., ...], ...]
+                  $existingFiles = [];
+                  if(isset($dokumenExisting) && is_array($dokumenExisting) && isset($dokumenExisting[$key])){
+                    $existingFiles = collect($dokumenExisting[$key])->pluck('path')->all();
+                  } else {
+                    $existingFiles = $parseFiles($arsip ? $get($arsip, $key) : null);
+                  }
+
                   $existingCount = count($existingFiles);
                 @endphp
 
@@ -425,10 +459,6 @@
 
                   <div class="tp-acc-body">
                     <div class="tp-upload-row" style="margin-bottom:0;">
-
-                      {{-- list path existing yang dihapus --}}
-                      <div class="js-remove-wrap" hidden></div>
-
                       <label class="tp-dropzone">
                         <input
                           type="file"
@@ -436,6 +466,7 @@
                           class="tp-file-hidden"
                           multiple
                           data-key="{{ $key }}"
+                          data-arsip-id="{{ $arsipId }}"
                         />
 
                         <div class="tp-drop-ic"><i class="bi bi-upload"></i></div>
@@ -449,7 +480,7 @@
 
                           <div class="tp-preview-list">
                             @foreach($existingFiles as $path)
-                              <div class="tp-preview-item tp-existing" data-existing="1" data-path="{{ $path }}">
+                              <div class="tp-preview-item tp-existing" data-existing="1" data-path="{{ $path }}" data-field="{{ $key }}">
                                 <div class="tp-preview-left">
                                   <div class="tp-preview-thumb">
                                     <i class="bi bi-file-earmark"></i>
@@ -459,6 +490,7 @@
                                     <div class="tp-preview-meta">File tersimpan</div>
                                   </div>
                                 </div>
+                                {{-- ✅ FIX: hapus existing pakai AJAX ke controller hapusDokumenFile (bukan hidden *_remove[] yang tidak diproses) --}}
                                 <button type="button" class="tp-preview-remove js-remove-existing" aria-label="Hapus file">
                                   <i class="bi bi-x-lg"></i>
                                 </button>
@@ -478,7 +510,7 @@
         </div>
       </section>
 
-      {{-- ✅ E. Dokumen Tidak Dipersyaratkan (COPY SAMA PERSIS DARI TAMBAH PENGADAAN) --}}
+      {{-- E. Dokumen Tidak Dipersyaratkan --}}
       <section class="dash-table tp-cardbox" style="border-radius:14px; overflow:visible; margin-bottom:14px;">
         <div style="padding:18px 18px 16px;">
           <div class="tp-section">
@@ -491,10 +523,7 @@
               Centang dokumen yang <b>tidak dipersyaratkan</b>. List ini otomatis mengambil nama dokumen dari kolom D.
             </div>
 
-            {{-- Hidden (untuk kebutuhan popup detail / backend) --}}
             <input type="hidden" name="dokumen_tidak_dipersyaratkan_json" id="tp-nondoc-json" value="[]">
-
-            {{-- ✅ simpan preselect dari backend (edit mode) --}}
             <input type="hidden" id="tp-nondoc-preselect" value='@json($eSelected)'>
 
             <div class="tp-nondoc-wrap">
@@ -511,9 +540,7 @@
                 </div>
               </div>
 
-              <div class="tp-nondoc-box" id="tp-nondoc-list">
-                {{-- di-inject oleh JS --}}
-              </div>
+              <div class="tp-nondoc-box" id="tp-nondoc-list"></div>
 
               <div class="tp-nondoc-selected" id="tp-nondoc-selected" hidden>
                 <div class="tp-nondoc-selected-title">Terpilih</div>
@@ -525,7 +552,6 @@
         </div>
       </section>
 
-      {{-- ✅ BAWAH: kiri Hapus Perubahan, kanan Simpan Perubahan --}}
       <div class="tp-actions tp-actions-split">
         <button type="button" class="tp-btn tp-btn-danger tp-btn-same" id="btnResetChanges">
           <i class="bi bi-x-circle"></i>
@@ -585,7 +611,6 @@
     gap: 10px;
   }
 
-  /* ✅ tombol kembali DI ATAS PAGE (header) */
   .tp-header-actions{
     display:flex;
     align-items:center;
@@ -593,7 +618,6 @@
     margin-bottom: 5px;
   }
 
-  /* ✅ FIT untuk tombol Kembali di header (lebar ngikut teks) */
   .tp-btn-fit{
     min-width: 0 !important;
     width: auto !important;
@@ -601,9 +625,6 @@
     padding: 12px 16px;
   }
 
-  /* =============================
-     JUDUL A/B/C/D/E: BG DIHILANGIN
-  ============================= */
   .tp-section-title{
     display:flex;
     align-items:center;
@@ -655,7 +676,6 @@
   .tp-control{ position:relative; }
   .tp-control .tp-select{ appearance:none; padding-right: 42px; }
 
-  /* DROPDOWN */
   .tp-select{
     color: var(--navy2) !important;
     background-color: #fff !important;
@@ -697,7 +717,6 @@
     transform: translateY(-50%) rotate(-180deg);
   }
 
-  /* ✅ tombol konsisten ukuran */
   .tp-btn{
     display:inline-flex;
     align-items:center;
@@ -738,7 +757,6 @@
     box-shadow: 0 12px 20px rgba(239,68,68,.10);
   }
 
-  /* ✅ posisi tombol bawah: kiri & kanan */
   .tp-actions{
     display:flex;
     gap: 12px;
@@ -750,7 +768,6 @@
     align-items:center;
   }
 
-  /* RADIO */
   .tp-radio-wrap{ display:grid; gap: 12px; }
   .tp-radio-card{
     display:flex;
@@ -798,7 +815,6 @@
     background: var(--navy2);
   }
 
-  /* ACCORDION */
   .tp-acc-item{
     border: 1px solid #e6eef2;
     border-radius: 14px;
@@ -860,7 +876,6 @@
 
   .tp-upload-row{ margin-bottom: 16px; }
 
-  /* DROPZONE */
   .tp-dropzone{
     display:grid;
     place-items:center;
@@ -913,7 +928,6 @@
     border-radius: 10px;
   }
 
-  /* PREVIEW */
   .tp-preview-wrap{
     width: 100%;
     margin-top: 12px;
@@ -967,7 +981,6 @@
     }
   }
 
-  /* PATCH spacing konsisten */
   .tp-cardbox{
     background:#fff !important;
     border-radius:14px !important;
@@ -986,9 +999,7 @@
     color: #64748b;
   }
 
-  /* =============================
-     ✅ KOLOM E (SAMA PERSIS DARI TAMBAH PENGADAAN)
-  ============================= */
+  /* KOLOM E */
   .tp-nondoc-wrap{
     border: 1px solid #eef3f6;
     border-radius: 14px;
@@ -1225,11 +1236,40 @@
       return mb.toFixed(1) + ' MB';
     };
 
+    // ✅ Hapus existing file via AJAX -> UnitController@hapusDokumenFile
+    const deleteExisting = async ({arsipId, field, path}) => {
+      const url = @json(route('unit.arsip.dokumen.hapus', ['id' => '__ID__']));
+      const target = url.replace('__ID__', String(arsipId));
+
+      const res = await fetch(target, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': @json(csrf_token()),
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ field, path })
+      });
+
+      if(!res.ok){
+        let msg = 'Gagal menghapus file.';
+        try{
+          const j = await res.json();
+          if(j && j.message) msg = j.message;
+        }catch(e){}
+        throw new Error(msg);
+      }
+      return res.json();
+    };
+
     // Edit mode: existing + new
     document.querySelectorAll('.tp-acc-item').forEach(item => {
       const fileInput = item.querySelector('input[type="file"]');
       const zone = item.querySelector('.tp-dropzone');
       if(!fileInput || !zone) return;
+
+      const arsipId = parseInt(fileInput.getAttribute('data-arsip-id') || '0', 10);
+      const fieldKey = fileInput.getAttribute('data-key') || '';
 
       const title = zone.querySelector('.tp-drop-title');
       const sub = zone.querySelector('.tp-drop-sub');
@@ -1359,9 +1399,9 @@
         }
       };
 
-      // remove existing -> push hidden remove[]
+      // ✅ remove existing -> ajax delete
       item.querySelectorAll('.js-remove-existing').forEach(btnX => {
-        btnX.addEventListener('click', (ev) => {
+        btnX.addEventListener('click', async (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
 
@@ -1369,18 +1409,19 @@
           if(!row) return;
 
           const path = row.getAttribute('data-path') || '';
-          const wrap = item.querySelector('.js-remove-wrap');
-          if(wrap && path){
-            const key = fileInput.getAttribute('data-key') || '';
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key + '_remove[]';
-            input.value = path;
-            wrap.appendChild(input);
-          }
+          const field = row.getAttribute('data-field') || fieldKey;
 
-          row.remove();
-          syncUI();
+          if(!arsipId || !field || !path) return;
+
+          btnX.disabled = true;
+          try{
+            await deleteExisting({ arsipId, field, path });
+            row.remove();
+            syncUI();
+          }catch(err){
+            alert(err && err.message ? err.message : 'Gagal menghapus file.');
+            btnX.disabled = false;
+          }
         });
       });
 
@@ -1407,8 +1448,7 @@
     });
 
     /* =========================================================
-       ✅ E. Dokumen Tidak Dipersyaratkan (SAMA PERSIS)
-       + EDIT MODE: preselect dari backend
+       E. Dokumen Tidak Dipersyaratkan (EDIT MODE: preselect)
        ========================================================= */
     const listWrap = document.getElementById('tp-nondoc-list');
     const jsonInput = document.getElementById('tp-nondoc-json');
@@ -1477,7 +1517,7 @@
       const titles = getDocTitlesFromD();
       listWrap.innerHTML = '';
 
-      titles.forEach((title, idx) => {
+      titles.forEach((title) => {
         const label = document.createElement('label');
         label.className = 'tp-nondoc-item';
 
@@ -1497,7 +1537,6 @@
         label.appendChild(box);
         label.appendChild(txt);
 
-        // ✅ preselect dari backend
         if(preselect.includes(title)){
           state.selected.add(title);
           label.classList.add('is-checked');
