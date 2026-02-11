@@ -11,6 +11,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 
 class PpkController extends Controller
 {
@@ -52,7 +53,6 @@ class PpkController extends Controller
                         'tahun' => $p->tahun ?? null,
 
                         // blade dummy pakai metode & status
-                        // metode kita mapping dari jenis_pengadaan
                         'metode' => $p->jenis_pengadaan ?? '-',
                         'status' => $p->status_pekerjaan ?? '-',
 
@@ -99,7 +99,7 @@ class PpkController extends Controller
                 'status' => 'Pemilihan',
                 'nilai_kontrak' => 'Rp. 980.000.000,00',
 
-                'unit' => 'UPT TIK',
+                'unit' => 'UPA Teknologi Informasi dan Komunikasi',
                 'status_arsip' => 'Privat',
                 'idrup' => '2026-009',
                 'rekanan' => 'PT Data Cloud Indonesia',
@@ -225,7 +225,7 @@ class PpkController extends Controller
                 'status' => 'Pemilihan',
                 'nilai_kontrak' => 'Rp. 410.000.000,00',
 
-                'unit' => 'Fakultas MIPA',
+                'unit' => 'Fakultas Matematika dan Ilmu Pengetahuan Alam',
                 'status_arsip' => 'Publik',
                 'idrup' => '2025-007',
                 'rekanan' => 'PT Labindo Raya',
@@ -243,7 +243,7 @@ class PpkController extends Controller
                 'status' => 'Perencanaan',
                 'nilai_kontrak' => 'Rp. 275.000.000,00',
 
-                'unit' => 'LPPM',
+                'unit' => 'Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)',
                 'status_arsip' => 'Publik',
                 'idrup' => '2026-008',
                 'rekanan' => 'PT Konsultan Mandiri',
@@ -261,7 +261,7 @@ class PpkController extends Controller
                 'status' => 'Selesai',
                 'nilai_kontrak' => 'Rp. 48.500.000,00',
 
-                'unit' => 'Biro Umum',
+                'unit' => 'Biro Keuangan dan Umum',
                 'status_arsip' => 'Publik',
                 'idrup' => '2026-010',
                 'rekanan' => 'CV Bersih Jaya',
@@ -297,7 +297,7 @@ class PpkController extends Controller
                 'status' => 'Perencanaan',
                 'nilai_kontrak' => 'Rp. 360.000.000,00',
 
-                'unit' => 'LPMPP',
+                'unit' => 'Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)',
                 'status_arsip' => 'Publik',
                 'idrup' => '2025-012',
                 'rekanan' => 'PT Edu Tech Solution',
@@ -408,38 +408,51 @@ class PpkController extends Controller
 
     /**
      * Tampilkan form Tambah Pengadaan (PPK)
-     * (Tidak mengubah view. Kita hanya menambahkan $units jika view butuh dropdown)
+     * - pastikan master Unit (27 unit + PPK) ada di DB
+     * - kirim $units untuk dropdown id-based
      */
     public function pengadaanCreate()
     {
         $ppkName = auth()->user()->name ?? "PPK Utama";
-        $units = Unit::orderBy('nama')->get(); // aman meskipun view tidak memakai
+
+        // ✅ pastikan master unit lengkap ada (termasuk PPK + unit_id "pertanian")
+        $this->ensureMasterUnits();
+
+        // ✅ urut nama
+        $units = Unit::orderBy('nama')->get();
+
         return view('PPK.TambahPengadaan', compact('ppkName', 'units'));
     }
 
     /**
-     * Simpan Pengadaan ke Database + Upload dokumen (sesuai form TambahPengadaan.blade.php yang kamu upload)
-     * - support: unit_id (jika form sudah pakai id)
-     * - support: unit_kerja string (jika form masih pakai nama unit)
-     * - simpan dokumen multiple ke storage + jsonb
+     * Simpan Pengadaan ke Database + Upload dokumen
+     * - support: unit_id numeric (PK) ATAU unit_id string/kode (mis: "pertanian")
+     * - support fallback: unit_kerja string (nama unit)
      */
     public function pengadaanStore(Request $request)
     {
-        // 1) Resolusi unit_id tanpa mengubah view
-        $unitId = $request->input('unit_id');
+        // ✅ pastikan master unit lengkap ada (biar dropdown/id selalu match DB)
+        $this->ensureMasterUnits();
 
-        if (!$unitId) {
+        // 1) Resolusi unit_id tanpa mengubah view
+        //    - jika view kirim unit_id (kode/string atau numeric) -> resolve ke PK units.id
+        //    - fallback: unit_kerja (nama)
+        $rawUnit = $request->input('unit_id');
+
+        $resolvedUnitId = $this->resolveUnitId($rawUnit);
+
+        if (!$resolvedUnitId) {
             $unitKerja = trim((string) $request->input('unit_kerja', ''));
             if ($unitKerja !== '') {
                 $unit = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($unitKerja)])->first();
                 if (!$unit) {
                     return back()->withErrors(['unit_kerja' => 'Unit kerja belum ada di master units.'])->withInput();
                 }
-                $unitId = $unit->id;
+                $resolvedUnitId = $unit->id;
             }
         }
 
-        if (!$unitId) {
+        if (!$resolvedUnitId) {
             return back()->withErrors(['unit_id' => 'Unit wajib dipilih.'])->withInput();
         }
 
@@ -484,7 +497,7 @@ class PpkController extends Controller
         unset($data['dokumen_tidak_dipersyaratkan_json']);
 
         // 5) Set kolom wajib DB
-        $data['unit_id'] = (int)$unitId;
+        $data['unit_id'] = (int)$resolvedUnitId;
         $data['created_by'] = Auth::id();
 
         // 6) create dulu untuk dapat id (folder upload rapi)
@@ -519,6 +532,7 @@ class PpkController extends Controller
 
         $pengadaan->save();
 
+        // ✅ setelah save, langsung muncul di PPK/Arsip karena arsipIndex ambil dari DB (latest)
         return redirect()
             ->route('ppk.arsip')
             ->with('success', 'Pengadaan baru berhasil ditambahkan!');
@@ -588,6 +602,129 @@ class PpkController extends Controller
         return redirect()
             ->route('ppk.kelola.akun')
             ->with('success', 'Akun berhasil diperbarui.');
+    }
+
+    /**
+     * =========================
+     * ✅ MASTER UNIT (27 Unit + PPK)
+     * - untuk dropdown Unit Kerja berbasis "unit id" (kode) seperti: pertanian, biologi, dst
+     * - termasuk PPK sendiri di dropdown
+     * =========================
+     */
+    private function ensureMasterUnits(): void
+    {
+        // kalau tabel units belum ada / migrasi belum jalan, jangan bikin error
+        try {
+            if (!Schema::hasTable('units')) return;
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        // NOTE:
+        // - "unit ID" yang kamu maksud: kita anggap sebagai kolom "kode" / "slug" / "unit_id"
+        // - kalau di tabel units kamu belum punya kolom itu, fungsi ini akan tetap membuat data minimal (nama saja)
+        //   dan dropdown id-based tetap bisa pakai PK numeric units.id.
+        $master = [
+            ['kode' => 'pertanian', 'nama' => 'Fakultas Pertanian'],
+            ['kode' => 'biologi', 'nama' => 'Fakultas Biologi'],
+            ['kode' => 'feb', 'nama' => 'Fakultas Ekonomi dan Bisnis'],
+            ['kode' => 'peternakan', 'nama' => 'Fakultas Peternakan'],
+            ['kode' => 'hukum', 'nama' => 'Fakultas Hukum'],
+            ['kode' => 'fisip', 'nama' => 'Fakultas Ilmu Sosial dan Ilmu Politik'],
+            ['kode' => 'kedokteran', 'nama' => 'Fakultas Kedokteran'],
+            ['kode' => 'teknik', 'nama' => 'Fakultas Teknik'],
+            ['kode' => 'fikes', 'nama' => 'Fakultas Ilmu-Ilmu Kesehatan'],
+            ['kode' => 'fib', 'nama' => 'Fakultas Ilmu Budaya'],
+            ['kode' => 'fmipa', 'nama' => 'Fakultas Matematika dan Ilmu Pengetahuan Alam'],
+            ['kode' => 'fpi', 'nama' => 'Fakultas Perikanan dan Ilmu Kelautan'],
+            ['kode' => 'pascasarjana', 'nama' => 'Pascasarjana'],
+            ['kode' => 'lppm', 'nama' => 'Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)'],
+            ['kode' => 'lpmpp', 'nama' => 'Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)'],
+            ['kode' => 'biro-akademik-kemahasiswaan', 'nama' => 'Biro Akademik dan Kemahasiswaan'],
+            ['kode' => 'biro-perencanaan-kerjasama-humas', 'nama' => 'Biro Perencanaan, Kerjasama, dan Hubungan Masyarakat'],
+            ['kode' => 'biro-keuangan-umum', 'nama' => 'Biro Keuangan dan Umum'],
+            ['kode' => 'badan-pengelola-usaha', 'nama' => 'Badan Pengelola Usaha'],
+            ['kode' => 'rsgmp', 'nama' => 'Rumah Sakit Gigi dan Mulut Pendidikan (RSGMP)'],
+            ['kode' => 'spi', 'nama' => 'Satuan Pengawasan Internal'],
+            ['kode' => 'upa-perpustakaan', 'nama' => 'UPA Perpustakaan'],
+            ['kode' => 'upa-bahasa', 'nama' => 'UPA Bahasa'],
+            ['kode' => 'upa-layanan-laboratorium-terpadu', 'nama' => 'UPA Layanan Laboratorium Terpadu'],
+            ['kode' => 'upa-layanan-uji-kompetensi', 'nama' => 'UPA Layanan Uji Kompetensi'],
+            ['kode' => 'upa-pengembangan-karir-kewirausahaan', 'nama' => 'UPA Pengembangan Karir dan Kewirausahaan'],
+            ['kode' => 'upa-tik', 'nama' => 'UPA Teknologi Informasi dan Komunikasi'],
+            // ✅ PPK sendiri masuk dropdown
+            ['kode' => 'ppk', 'nama' => 'PPK'],
+        ];
+
+        // prefer kolom kode/slug/unit_id kalau ada
+        $hasKode = Schema::hasColumn('units', 'kode');
+        $hasSlug = Schema::hasColumn('units', 'slug');
+        $hasUnitIdCol = Schema::hasColumn('units', 'unit_id');
+
+        foreach ($master as $row) {
+            try {
+                if ($hasKode) {
+                    Unit::updateOrCreate(['kode' => $row['kode']], ['nama' => $row['nama']]);
+                } elseif ($hasSlug) {
+                    Unit::updateOrCreate(['slug' => $row['kode']], ['nama' => $row['nama']]);
+                } elseif ($hasUnitIdCol) {
+                    Unit::updateOrCreate(['unit_id' => $row['kode']], ['nama' => $row['nama']]);
+                } else {
+                    // fallback: minimal berdasarkan nama
+                    Unit::firstOrCreate(['nama' => $row['nama']], ['nama' => $row['nama']]);
+                }
+            } catch (\Throwable $e) {
+                // jangan bikin form gagal kebuka hanya karena seeder-like gagal
+            }
+        }
+    }
+
+    /**
+     * Resolve unit_id dari input:
+     * - numeric => langsung jadi units.id
+     * - string => dicari di kolom (kode/slug/unit_id) bila ada, atau fallback ke nama (case-insensitive)
+     */
+    private function resolveUnitId($rawUnit): ?int
+    {
+        if ($rawUnit === null) return null;
+
+        $raw = trim((string)$rawUnit);
+        if ($raw === '') return null;
+
+        // numeric PK
+        if (ctype_digit($raw)) {
+            return (int)$raw;
+        }
+
+        if (!Schema::hasTable('units')) return null;
+
+        $hasKode = Schema::hasColumn('units', 'kode');
+        $hasSlug = Schema::hasColumn('units', 'slug');
+        $hasUnitIdCol = Schema::hasColumn('units', 'unit_id');
+
+        // cari berdasarkan "unit id" (kode) seperti: pertanian, biologi, dst
+        try {
+            if ($hasKode) {
+                $u = Unit::whereRaw('LOWER(kode) = ?', [mb_strtolower($raw)])->first();
+                if ($u) return (int)$u->id;
+            }
+            if ($hasSlug) {
+                $u = Unit::whereRaw('LOWER(slug) = ?', [mb_strtolower($raw)])->first();
+                if ($u) return (int)$u->id;
+            }
+            if ($hasUnitIdCol) {
+                $u = Unit::whereRaw('LOWER(unit_id) = ?', [mb_strtolower($raw)])->first();
+                if ($u) return (int)$u->id;
+            }
+
+            // fallback terakhir: nama unit
+            $u = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($raw)])->first();
+            if ($u) return (int)$u->id;
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return null;
     }
 
     /**

@@ -26,7 +26,89 @@
 
   // opsi dummy dropdown
   $tahunOptions = [2022, 2023, 2024, 2025, 2026];
-  $unitOptions  = ["Fakultas Teknik", "Fakultas Hukum", "Fakultas Ekonomi dan Bisnis"];
+
+  // ✅ 27 UNIT RESMI (sesuai list kamu) + 1 PPK
+  $unitNamesFull = [
+    "Fakultas Pertanian",
+    "Fakultas Biologi",
+    "Fakultas Ekonomi dan Bisnis",
+    "Fakultas Peternakan",
+    "Fakultas Hukum",
+    "Fakultas Ilmu Sosial dan Ilmu Politik",
+    "Fakultas Kedokteran",
+    "Fakultas Teknik",
+    "Fakultas Ilmu-Ilmu Kesehatan",
+    "Fakultas Ilmu Budaya",
+    "Fakultas Matematika dan Ilmu Pengetahuan Alam",
+    "Fakultas Perikanan dan Ilmu Kelautan",
+    "Pascasarjana",
+    "Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)",
+    "Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)",
+    "Biro Akademik dan Kemahasiswaan",
+    "Biro Perencanaan, Kerjasama, dan Hubungan Masyarakat",
+    "Biro Keuangan dan Umum",
+    "Badan Pengelola Usaha",
+    "Rumah Sakit Gigi dan Mulut Pendidikan (RSGMP)",
+    "Satuan Pengawasan Internal",
+    "UPA Perpustakaan",
+    "UPA Bahasa",
+    "UPA Layanan Laboratorium Terpadu",
+    "UPA Layanan Uji Kompetensi",
+    "UPA Pengembangan Karir dan Kewirausahaan",
+    "UPA Teknologi Informasi dan Komunikasi",
+  ];
+
+  // ✅ Label unit yang aman walau nama kolom beda-beda
+  $getUnitLabel = function($u){
+    return $u->nama_unit
+      ?? $u->nama
+      ?? $u->name
+      ?? $u->unit_name
+      ?? ('Unit #' . ($u->id ?? ''));
+  };
+
+  /**
+   * ✅ AMBIL UNIT DARI DB TAPI DIFILTER:
+   * hanya yang namanya ada di list resmi (27 unit) atau "PPK"
+   */
+  try {
+    $unitsDbRaw = \App\Models\Unit::query()
+      ->orderBy('id', 'asc')
+      ->get();
+  } catch (\Throwable $e) {
+    $unitsDbRaw = collect();
+  }
+
+  // ✅ Filter ketat: hanya 27 unit + PPK
+  $allowedMap = [];
+  foreach ($unitNamesFull as $nm) $allowedMap[mb_strtolower($nm)] = true;
+
+  $unitsDb = $unitsDbRaw->filter(function($u) use ($getUnitLabel, $allowedMap){
+    $label = mb_strtolower(trim((string)$getUnitLabel($u)));
+
+    // PPK boleh (apapun variasi penulisannya yang mengandung "ppk")
+    if (str_contains($label, 'ppk')) return true;
+
+    // 27 unit harus EXACT match (biar "Pertanian" / "UPT TIK" gak lolos)
+    return isset($allowedMap[$label]);
+  })->values();
+
+  // ✅ Urutkan sesuai urutan list kamu, dan PPK taruh paling atas
+  $unitsDb = $unitsDb->sortBy(function($u) use ($getUnitLabel, $unitNamesFull){
+    $label = trim((string)$getUnitLabel($u));
+    $lower = mb_strtolower($label);
+
+    if (str_contains($lower, 'ppk')) return -1; // PPK paling atas
+
+    $idx = array_search($label, $unitNamesFull, true);
+    return ($idx === false) ? 9999 : $idx;
+  })->values();
+
+  // ✅ cek apakah PPK sudah ada di DB (kalau tidak ada, kita tampilkan fallback opsi PPK)
+  $hasPpkInDb = $unitsDb->first(function($u) use ($getUnitLabel){
+    return str_contains(mb_strtolower($getUnitLabel($u)), 'ppk');
+  });
+
   $jenisPengadaanOptions = ["Tender", "E-Katalog", "Pengadaan Langsung", "Seleksi", "Penunjukan Langsung"];
   $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 @endphp
@@ -62,9 +144,9 @@
       </a>
 
       <a class="dash-link {{ request()->routeIs('ppk.kelola.akun') ? 'active' : '' }}" href="{{ route('ppk.kelola.akun') }}">
-  <span class="ic"><i class="bi bi-person-gear"></i></span>
-  Kelola Akun
-</a>
+        <span class="ic"><i class="bi bi-person-gear"></i></span>
+        Kelola Akun
+      </a>
 
     </nav>
 
@@ -107,7 +189,7 @@
                   <select name="tahun" class="tp-select" required>
                     <option value="" selected disabled hidden>Tahun</option>
                     @foreach($tahunOptions as $t)
-                      <option value="{{ $t }}">{{ $t }}</option>
+                      <option value="{{ $t }}" {{ old('tahun') == $t ? 'selected' : '' }}>{{ $t }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
@@ -117,11 +199,32 @@
               <div class="tp-field">
                 <label class="tp-label">Unit Kerja</label>
                 <div class="tp-control">
-                  <select name="unit_kerja" class="tp-select" required>
-                    <option value="" selected disabled hidden>Fakultas</option>
-                    @foreach($unitOptions as $u)
-                      <option value="{{ $u }}">{{ $u }}</option>
+                  {{-- ✅ hanya 27 unit + 1 PPK --}}
+                  <select name="unit_id" class="tp-select" required>
+                    <option value="" selected disabled hidden>Pilih Unit Kerja</option>
+
+                    {{-- ✅ PPK (fallback kalau belum ada row PPK di DB) --}}
+                    @if(!$hasPpkInDb)
+                      <option value="0" {{ old('unit_id') == '0' ? 'selected' : '' }}>PPK</option>
+                    @endif
+
+                    {{-- ✅ Unit dari DB (SUDAH DIFILTER hanya 27 + PPK) --}}
+                    @foreach($unitsDb as $u)
+                      @php $label = $getUnitLabel($u); @endphp
+                      <option value="{{ $u->id }}" {{ (string)old('unit_id') === (string)$u->id ? 'selected' : '' }}>
+                        {{ $label }}
+                      </option>
                     @endforeach
+
+                    {{-- ✅ Kalau DB kosong / tidak ada yang match, pakai list resmi 27 unit sebagai tampilan --}}
+                    @if($unitsDb->isEmpty())
+                      <option value="0" {{ old('unit_id') == '0' ? 'selected' : '' }}>PPK</option>
+                      @foreach($unitNamesFull as $name)
+                        <option value="{{ $name }}" {{ old('unit_id') == $name ? 'selected' : '' }}>
+                          {{ $name }}
+                        </option>
+                      @endforeach
+                    @endif
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
@@ -129,12 +232,12 @@
 
               <div class="tp-field tp-full">
                 <label class="tp-label">Nama Pekerjaan</label>
-                <input type="text" name="nama_pekerjaan" class="tp-input" placeholder="Nama Pekerjaan" />
+                <input type="text" name="nama_pekerjaan" class="tp-input" placeholder="Nama Pekerjaan" value="{{ old('nama_pekerjaan') }}" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">ID RUP</label>
-                <input type="text" name="id_rup" class="tp-input" placeholder="RUP-xxxx-xxxx-xxx-xx" />
+                <input type="text" name="id_rup" class="tp-input" placeholder="RUP-xxxx-xxxx-xxx-xx" value="{{ old('id_rup') }}" />
               </div>
 
               <div class="tp-field">
@@ -143,7 +246,7 @@
                   <select name="jenis_pengadaan" class="tp-select" required>
                     <option value="" selected disabled hidden>Pilih Jenis Pengadaan</option>
                     @foreach($jenisPengadaanOptions as $jp)
-                      <option value="{{ $jp }}">{{ $jp }}</option>
+                      <option value="{{ $jp }}" {{ old('jenis_pengadaan') == $jp ? 'selected' : '' }}>{{ $jp }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
@@ -156,7 +259,7 @@
                   <select name="status_pekerjaan" class="tp-select" required>
                     <option value="" selected disabled hidden>Pilih Status Pekerjaan</option>
                     @foreach($statusPekerjaanOptions as $sp)
-                      <option value="{{ $sp }}">{{ $sp }}</option>
+                      <option value="{{ $sp }}" {{ old('status_pekerjaan') == $sp ? 'selected' : '' }}>{{ $sp }}</option>
                     @endforeach
                   </select>
                   <i class="bi bi-chevron-down tp-icon"></i>
@@ -211,22 +314,22 @@
             <div class="tp-grid">
               <div class="tp-field">
                 <label class="tp-label">Pagu Anggaran (Rp)</label>
-                <input type="text" name="pagu_anggaran" class="tp-input" placeholder="Rp" />
+                <input type="text" name="pagu_anggaran" class="tp-input" placeholder="Rp" value="{{ old('pagu_anggaran') }}" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">HPS (Rp)</label>
-                <input type="text" name="hps" class="tp-input" placeholder="Rp" />
+                <input type="text" name="hps" class="tp-input" placeholder="Rp" value="{{ old('hps') }}" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">Nilai Kontrak (Rp)</label>
-                <input type="text" name="nilai_kontrak" class="tp-input" placeholder="Rp" />
+                <input type="text" name="nilai_kontrak" class="tp-input" placeholder="Rp" value="{{ old('nilai_kontrak') }}" />
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">Nama Rekanan</label>
-                <input type="text" name="nama_rekanan" class="tp-input" placeholder="Nama Rekanan" />
+                <input type="text" name="nama_rekanan" class="tp-input" placeholder="Nama Rekanan" value="{{ old('nama_rekanan') }}" />
               </div>
             </div>
           </div>
