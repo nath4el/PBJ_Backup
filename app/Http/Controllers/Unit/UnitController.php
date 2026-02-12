@@ -181,9 +181,13 @@ class UnitController extends Controller
             abort(403, 'Akun unit belum terhubung ke unit_id.');
         }
 
+        // ✅ FIX: urutkan berdasarkan updated_at (terbaru diupdate paling atas)
+        // - latest() default-nya pakai created_at
+        // - kita ganti jadi orderByDesc('updated_at')
         $arsips = Pengadaan::with('unit')
             ->where('unit_id', $unitId)
-            ->latest()
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id') // fallback kalau updated_at sama
             ->paginate(10)
             ->withQueryString();
 
@@ -283,7 +287,9 @@ class UnitController extends Controller
             // D (FILE): append ke existing
             $this->handleUploadDokumenToModel($request, $pengadaan, true);
 
+            // ✅ updated_at otomatis berubah saat save()
             $pengadaan->save();
+
             DB::commit();
 
             return redirect()

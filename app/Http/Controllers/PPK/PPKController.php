@@ -241,8 +241,12 @@ class PpkController extends Controller
     {
         $ppkName = auth()->user()->name ?? "PPK Utama";
 
+        // ✅ FIX: urutkan berdasarkan updated_at (terbaru diupdate paling atas)
+        // - latest() default-nya pakai created_at
+        // - kita ganti jadi orderByDesc('updated_at')
         $arsips = Pengadaan::with('unit')
-            ->latest()
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id') // fallback kalau updated_at sama
             ->paginate(10)
             ->withQueryString();
 
@@ -552,6 +556,7 @@ class PpkController extends Controller
             $this->handleUploadDokumenToModel($request, $pengadaan, true);
             $this->handleRemoveExistingByHiddenInputs($request, $pengadaan);
 
+            // ✅ updated_at otomatis berubah saat save()
             $pengadaan->save();
             DB::commit();
 
