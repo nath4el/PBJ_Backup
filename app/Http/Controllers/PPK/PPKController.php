@@ -7,539 +7,622 @@ use App\Models\Pengadaan;
 use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class PpkController extends Controller
 {
     /**
      * Dashboard PPK
+     * ✅ Unit dropdown: MURNI dari database (hanya unit yang dipakai di tabel pengadaans)
+     * ❌ Tidak ada list statis, ❌ tidak auto-seed master unit
      */
     public function dashboard()
     {
         $ppkName = auth()->user()->name ?? 'PPK Utama';
-        return view('PPK.Dashboard', compact('ppkName'));
+
+        // =========================
+        // OPTIONS FILTER (Tahun)
+        // =========================
+        $tahunOptions = Pengadaan::whereNotNull('tahun')
+            ->select('tahun')
+            ->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
+
+        // fallback kalau DB pengadaan kosong
+        if (count($tahunOptions) === 0) {
+            $y = (int)date('Y');
+            $tahunOptions = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
+        }
+
+        $defaultYear = $tahunOptions[0] ?? (int)date('Y');
+
+        // =========================
+        // OPTIONS FILTER (Unit) - HANYA UNIT YANG ADA DI DATA PENGADAAN
+        // =========================
+        $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+
+        $usedUnitIds = Pengadaan::whereNotNull('unit_id')
+            ->distinct()
+            ->orderBy('unit_id')
+            ->pluck('unit_id')
+            ->map(fn($x) => (int)$x)
+            ->values()
+            ->all();
+
+        $units = count($usedUnitIds)
+            ? Unit::whereIn('id', $usedUnitIds)->orderBy($unitNameCol, 'asc')->get(['id', $unitNameCol])
+            : collect();
+
+        // untuk modal list (string)
+        $registeredUnits = $units->pluck($unitNameCol)->values()->all();
+
+        // untuk dropdown (id+name)
+        $unitOptions = $units->map(function ($u) use ($unitNameCol) {
+            return [
+                'id' => (int)$u->id,
+                'name' => (string)$u->{$unitNameCol},
+            ];
+        })->values()->all();
+
+        $totalUnitKerja = count($unitOptions);
+
+        // =========================
+        // SUMMARY CARDS (GLOBAL)
+        // =========================
+        $totalArsip = Pengadaan::count();
+        $publik     = Pengadaan::where('status_arsip', 'Publik')->count();
+        $privat     = Pengadaan::where('status_arsip', 'Privat')->count();
+
+        // kartu default mengikuti defaultYear
+        $paketYear = Pengadaan::where('tahun', $defaultYear)->count();
+        $nilaiYear = (int) Pengadaan::where('tahun', $defaultYear)->sum('nilai_kontrak');
+
+        $summary = [
+            ["label" => "Total Arsip", "value" => $totalArsip, "accent" => "navy", "icon" => "bi-file-earmark-text"],
+            ["label" => "Arsip Publik", "value" => $publik, "accent" => "yellow", "icon" => "bi-eye"],
+            ["label" => "Arsip Private", "value" => $privat, "accent" => "gray", "icon" => "bi-eye-slash"],
+            ["label" => "Total Arsip Pengadaan", "value" => $paketYear, "accent" => "navy", "icon" => "bi-file-earmark-text", "sub" => "Paket Pengadaan Barang dan Jasa"],
+            ["label" => "Total Nilai Pengadaan", "value" => $this->formatRupiahNumber($nilaiYear), "accent" => "yellow", "icon" => "bi-buildings", "sub" => "Nilai Kontrak Pengadaan"],
+        ];
+
+        // =========================
+        // CHART INIT (GLOBAL - tanpa filter)
+        // =========================
+        $statusLabels = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+        $statusValues = $this->countByStatusPekerjaanPPK(null, null, $statusLabels);
+
+        $barLabels = [
+            "Pengadaan\nLangsung",
+            "Penunjukan\nLangsung",
+            "E-Purchasing /\nE-Catalog",
+            "Tender\nTerbatas",
+            "Tender\nTerbuka",
+            "Swakelola"
+        ];
+        $barValues = $this->countByMetodePengadaanPPK(null, null, $barLabels);
+
+        return view('PPK.Dashboard', compact(
+            'ppkName',
+            'summary',
+            'tahunOptions',
+            'unitOptions',
+            'defaultYear',
+            'totalUnitKerja',
+            'registeredUnits',
+            'statusLabels',
+            'statusValues',
+            'barLabels',
+            'barValues'
+        ));
     }
 
     /**
-     * Daftar Arsip PBJ
-     * - Prioritas: ambil dari DB (Pengadaan)
-     * - Fallback: dummy 12 data biar view tetap kebuka walau DB kosong / belum siap
+     * ✅ JSON statistik dashboard (PPK) untuk fetch/AJAX
+     * Support:
+     * - ?tahun=2026 (opsional)
+     * - ?unit_id=3 (opsional)  <-- REKOMENDASI
+     * - ?unit=Fakultas Teknik (opsional) (fallback)
+     */
+    public function dashboardStats(Request $request)
+    {
+        $tahun = $request->query('tahun');
+        $tahun = ($tahun === null || $tahun === '') ? null : (int)$tahun;
+
+        $unitId = $request->query('unit_id');
+        $unitId = ($unitId === null || $unitId === '') ? null : (int)$unitId;
+
+        // fallback bila FE kirim unit name
+        $rawUnit = $request->query('unit');
+        if ($unitId === null && $rawUnit !== null && $rawUnit !== '' && $rawUnit !== 'Semua Unit') {
+            $unitId = $this->resolveUnitId($rawUnit);
+        }
+
+        $paket = Pengadaan::query()
+            ->when($unitId !== null, fn($q) => $q->where('unit_id', $unitId))
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->count();
+
+        $nilai = (int) Pengadaan::query()
+            ->when($unitId !== null, fn($q) => $q->where('unit_id', $unitId))
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->sum('nilai_kontrak');
+
+        $statusLabels = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+        $statusValues = $this->countByStatusPekerjaanPPK($unitId, $tahun, $statusLabels);
+
+        $barLabels = [
+            "Pengadaan\nLangsung",
+            "Penunjukan\nLangsung",
+            "E-Purchasing /\nE-Catalog",
+            "Tender\nTerbatas",
+            "Tender\nTerbuka",
+            "Swakelola"
+        ];
+        $barValues = $this->countByMetodePengadaanPPK($unitId, $tahun, $barLabels);
+
+        return response()->json([
+            'tahun'   => $tahun,
+            'unit_id' => $unitId,
+            'paket'   => ['count' => $paket],
+            'nilai'   => ['sum' => $nilai, 'formatted' => $this->formatRupiahNumber($nilai)],
+            'status'  => ['labels' => $statusLabels, 'values' => $statusValues],
+            'metode'  => ['labels' => $barLabels, 'values' => $barValues],
+        ]);
+    }
+
+    public function dashboardData(Request $request)
+    {
+        return $this->dashboardStats($request);
+    }
+
+    private function countByStatusPekerjaanPPK(?int $unitId, ?int $tahun, array $labels): array
+    {
+        $rows = Pengadaan::query()
+            ->when($unitId !== null, fn($q) => $q->where('unit_id', $unitId))
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->select('status_pekerjaan', DB::raw('COUNT(*) as cnt'))
+            ->groupBy('status_pekerjaan')
+            ->pluck('cnt', 'status_pekerjaan')
+            ->toArray();
+
+        return array_map(fn($lbl) => (int)($rows[$lbl] ?? 0), $labels);
+    }
+
+    private function countByMetodePengadaanPPK(?int $unitId, ?int $tahun, array $labels): array
+    {
+        $map = [
+            "Pengadaan\nLangsung"          => ["Pengadaan Langsung", "Pengadaan\nLangsung"],
+            "Penunjukan\nLangsung"        => ["Penunjukan Langsung", "Penunjukan\nLangsung"],
+            "E-Purchasing /\nE-Catalog"   => ["E-Purchasing / E-Catalog", "E-Purchasing/E-Catalog", "E-Purchasing", "E-Catalog", "E-Catalogue"],
+            "Tender\nTerbatas"            => ["Tender Terbatas", "Tender\nTerbatas"],
+            "Tender\nTerbuka"             => ["Tender Terbuka", "Tender\nTerbuka", "Tender"],
+            "Swakelola"                   => ["Swakelola"],
+        ];
+
+        $raw = Pengadaan::query()
+            ->when($unitId !== null, fn($q) => $q->where('unit_id', $unitId))
+            ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
+            ->select('jenis_pengadaan', DB::raw('COUNT(*) as cnt'))
+            ->groupBy('jenis_pengadaan')
+            ->pluck('cnt', 'jenis_pengadaan')
+            ->toArray();
+
+        $out = [];
+        foreach ($labels as $lbl) {
+            $alts = $map[$lbl] ?? [$lbl];
+            $sum = 0;
+            foreach ($alts as $k) $sum += (int)($raw[$k] ?? 0);
+            $out[] = $sum;
+        }
+        return $out;
+    }
+
+    private function formatRupiahNumber($value): string
+    {
+        $num = (int)($value ?? 0);
+        return 'Rp ' . number_format($num, 0, ',', '.');
+    }
+
+    /**
+     * Arsip PBJ (PPK)
+     * ✅ dropdown unit di halaman Arsip = SEMUA UNIT dari tabel `units`
      */
     public function arsipIndex(Request $request)
     {
         $ppkName = auth()->user()->name ?? "PPK Utama";
 
-        // =========================
-        // 1) Coba ambil dari DB
-        // =========================
-        try {
-            // eager load unit untuk tampilkan nama unit di arsip
-            $query = Pengadaan::with('unit')->latest();
+        $arsips = Pengadaan::with('unit')
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
 
-            $dbPaginated = $query->paginate(10)->withQueryString();
+        $mapped = $arsips->getCollection()->map(function (Pengadaan $p) {
+            return [
+                'id' => $p->id,
 
-            if ($dbPaginated->total() > 0) {
-                // Mapping ke bentuk yang sama seperti dummy agar blade tidak perlu diubah
-                $mapped = $dbPaginated->getCollection()->map(function ($p) {
-                    return [
-                        'id' => $p->id,
+                'pekerjaan' => ($p->nama_pekerjaan ?? '-'),
+                'id_rup' => $p->id_rup ?? '-',
+                'tahun' => $p->tahun ?? null,
+                'metode_pbj' => $p->jenis_pengadaan ?? '-',
+                'jenis_pengadaan' => $p->jenis_pengadaan ?? '-',
+                'status_pekerjaan' => $p->status_pekerjaan ?? '-',
+                'status_arsip' => $p->status_arsip ?? '-',
 
-                        // blade dummy pakai "judul", kita isi dari "nama_pekerjaan"
-                        'judul' => $p->nama_pekerjaan ?? '-',
-                        'tahun' => $p->tahun ?? null,
+                'nilai_kontrak' => $this->formatRupiah($p->nilai_kontrak),
+                'pagu_anggaran' => $this->formatRupiah($p->pagu_anggaran),
+                'hps' => $this->formatRupiah($p->hps),
+                'nama_rekanan' => $p->nama_rekanan ?? '-',
 
-                        // blade dummy pakai metode & status
-                        'metode' => $p->jenis_pengadaan ?? '-',
-                        'status' => $p->status_pekerjaan ?? '-',
+                'unit' => $p->unit?->nama ?? ($p->unit?->name ?? '-'),
 
-                        // angka rupiah di DB integer -> tampilin string rupiah
-                        'nilai_kontrak' => $this->formatRupiah($p->nilai_kontrak),
+                'dokumen' => $this->buildDokumenList($p),
+                'dokumen_tidak_dipersyaratkan' => $this->normalizeArray($p->dokumen_tidak_dipersyaratkan),
+            ];
+        });
 
-                        // tambahan detail yang dipakai dummy view
-                        'unit' => $p->unit?->nama ?? '-',
-                        'status_arsip' => $p->status_arsip ?? '-',
-                        'idrup' => $p->id_rup ?? '-',
-                        'rekanan' => $p->nama_rekanan ?? '-',
-                        'jenis' => $p->jenis_pengadaan ?? '-',
-                        'pagu' => $this->formatRupiah($p->pagu_anggaran),
-                        'hps' => $this->formatRupiah($p->hps),
+        $arsips->setCollection($mapped);
 
-                        // dokumen_tidak_dipersyaratkan di DB jsonb -> tampilkan teks ringkas
-                        'dokumen_tidak_dipersyaratkan' => is_array($p->dokumen_tidak_dipersyaratkan)
-                            ? (count($p->dokumen_tidak_dipersyaratkan) > 0
-                                ? 'Ada dokumen pendukung (opsional).'
-                                : 'Tidak ada dokumen pendukung.')
-                            : 'Tidak ada dokumen pendukung.',
-                    ];
-                });
+        // ✅ Tahun dropdown (kalau blade kamu butuh $years)
+        $years = Pengadaan::whereNotNull('tahun')
+            ->select('tahun')
+            ->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
 
-                // Ganti collection paginator -> tetap paginator, tapi itemnya array dummy-shape
-                $dbPaginated->setCollection($mapped);
-
-                $arsips = $dbPaginated;
-                return view('PPK.ArsipPBJ', compact('ppkName', 'arsips'));
-            }
-        } catch (\Throwable $e) {
-            // fallback dummy
+        if (count($years) === 0) {
+            $y = (int)date('Y');
+            $years = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
         }
 
-        // =========================
-        // 2) FALLBACK: DUMMY 12 DATA
-        // =========================
-        $arsipList = [
-            [
-                'id' => 101,
-                'judul' => 'Pengadaan Server Virtualisasi',
-                'tahun' => 2025,
-                'metode' => 'Tender Terbuka',
-                'status' => 'Pemilihan',
-                'nilai_kontrak' => 'Rp. 980.000.000,00',
+        // ✅ UNIT DROPDOWN (SEMUA UNIT dari tabel units)
+        $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
 
-                'unit' => 'UPA Teknologi Informasi dan Komunikasi',
-                'status_arsip' => 'Privat',
-                'idrup' => '2026-009',
-                'rekanan' => 'PT Data Cloud Indonesia',
-                'jenis' => 'Tender',
-                'pagu' => 'Rp 1.050.000.000',
-                'hps' => 'Rp 1.020.000.000',
+        $unitOptions = Unit::orderBy($unitNameCol, 'asc')
+            ->pluck($unitNameCol)
+            ->values()
+            ->all();
 
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen Kolom E tidak dipersyaratkan. Jika ada, unggah sebagai dokumen pendukung.',
-            ],
-            [
-                'id' => 102,
-                'judul' => 'Pengadaan Perangkat Presentasi Ruang Rapat',
-                'tahun' => 2024,
-                'metode' => 'E-Purchasing',
-                'status' => 'Pelaksanaan',
-                'nilai_kontrak' => 'Rp. 185.000.000,00',
-
-                'unit' => 'Fakultas Ekonomi dan Bisnis',
-                'status_arsip' => 'Privat',
-                'idrup' => '2026-002',
-                'rekanan' => 'CV Sinar Media',
-                'jenis' => 'E-Katalog',
-                'pagu' => 'Rp 200.000.000',
-                'hps' => 'Rp 195.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Kolom E berisi dokumen pendukung (opsional). Jika tidak diunggah, proses tetap dapat berjalan.',
-            ],
-            [
-                'id' => 103,
-                'judul' => 'Pengadaan Laboratorium Komputer Terpadu',
-                'tahun' => 2024,
-                'metode' => 'Pengadaan Langsung',
-                'status' => 'Perencanaan',
-                'nilai_kontrak' => 'Rp. 1.250.000.000,00',
-
-                'unit' => 'Fakultas Teknik',
-                'status_arsip' => 'Publik',
-                'idrup' => '2026-001',
-                'rekanan' => 'PT Teknologi Maju Nusantara',
-                'jenis' => 'Tender',
-                'pagu' => 'Rp 1.300.000.000',
-                'hps' => 'Rp 1.280.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).',
-            ],
-            [
-                'id' => 104,
-                'judul' => 'Pemeliharaan Jaringan Internet Kampus',
-                'tahun' => 2024,
-                'metode' => 'Pengadaan Langsung',
-                'status' => 'Pelaksanaan',
-                'nilai_kontrak' => 'Rp. 95.000.000,00',
-
-                'unit' => 'Fakultas Hukum',
-                'status_arsip' => 'Publik',
-                'idrup' => '2026-003',
-                'rekanan' => 'PT Netlink Solusi',
-                'jenis' => 'Non Tender',
-                'pagu' => 'Rp 100.000.000',
-                'hps' => 'Rp 98.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen pada Kolom E tidak dipersyaratkan untuk pengadaan ini.',
-            ],
-            [
-                'id' => 105,
-                'judul' => 'Pengadaan Alat Kesehatan Klinik',
-                'tahun' => 2024,
-                'metode' => 'Tender Cepat',
-                'status' => 'Selesai',
-                'nilai_kontrak' => 'Rp. 620.000.000,00',
-
-                'unit' => 'Fakultas Kedokteran',
-                'status_arsip' => 'Privat',
-                'idrup' => '2026-004',
-                'rekanan' => 'PT Medika Sehat Sentosa',
-                'jenis' => 'Tender',
-                'pagu' => 'Rp 650.000.000',
-                'hps' => 'Rp 640.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen Kolom E (opsional): surat dukungan / brosur tambahan.',
-            ],
-            [
-                'id' => 106,
-                'judul' => 'Pengadaan Bibit dan Pupuk Praktikum',
-                'tahun' => 2023,
-                'metode' => 'E-Purchasing',
-                'status' => 'Selesai',
-                'nilai_kontrak' => 'Rp. 75.500.000,00',
-
-                'unit' => 'Fakultas Pertanian',
-                'status_arsip' => 'Publik',
-                'idrup' => '2025-005',
-                'rekanan' => 'UD Tani Makmur',
-                'jenis' => 'E-Katalog',
-                'pagu' => 'Rp 80.000.000',
-                'hps' => 'Rp 79.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).',
-            ],
-            [
-                'id' => 107,
-                'judul' => 'Pengadaan Buku Referensi Perpustakaan',
-                'tahun' => 2023,
-                'metode' => 'E-Purchasing',
-                'status' => 'Pelaksanaan',
-                'nilai_kontrak' => 'Rp. 120.000.000,00',
-
-                'unit' => 'Fakultas Ilmu Budaya',
-                'status_arsip' => 'Privat',
-                'idrup' => '2025-006',
-                'rekanan' => 'PT Pustaka Utama',
-                'jenis' => 'E-Katalog',
-                'pagu' => 'Rp 130.000.000',
-                'hps' => 'Rp 128.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Kolom E tidak wajib. Silakan unggah jika ada dokumen pendukung tambahan.',
-            ],
-            [
-                'id' => 108,
-                'judul' => 'Pengadaan Reagen Laboratorium Kimia',
-                'tahun' => 2023,
-                'metode' => 'Tender',
-                'status' => 'Pemilihan',
-                'nilai_kontrak' => 'Rp. 410.000.000,00',
-
-                'unit' => 'Fakultas Matematika dan Ilmu Pengetahuan Alam',
-                'status_arsip' => 'Publik',
-                'idrup' => '2025-007',
-                'rekanan' => 'PT Labindo Raya',
-                'jenis' => 'Tender',
-                'pagu' => 'Rp 450.000.000',
-                'hps' => 'Rp 440.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen Kolom E opsional (tidak dipersyaratkan).',
-            ],
-            [
-                'id' => 109,
-                'judul' => 'Jasa Konsultansi Penyusunan Roadmap Riset',
-                'tahun' => 2024,
-                'metode' => 'Seleksi',
-                'status' => 'Perencanaan',
-                'nilai_kontrak' => 'Rp. 275.000.000,00',
-
-                'unit' => 'Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)',
-                'status_arsip' => 'Publik',
-                'idrup' => '2026-008',
-                'rekanan' => 'PT Konsultan Mandiri',
-                'jenis' => 'Seleksi',
-                'pagu' => 'Rp 300.000.000',
-                'hps' => 'Rp 295.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Kolom E berisi lampiran tambahan (opsional), misalnya TOR versi revisi.',
-            ],
-            [
-                'id' => 110,
-                'judul' => 'Pengadaan Peralatan Kebersihan Gedung',
-                'tahun' => 2024,
-                'metode' => 'Pengadaan Langsung',
-                'status' => 'Selesai',
-                'nilai_kontrak' => 'Rp. 48.500.000,00',
-
-                'unit' => 'Biro Keuangan dan Umum',
-                'status_arsip' => 'Publik',
-                'idrup' => '2026-010',
-                'rekanan' => 'CV Bersih Jaya',
-                'jenis' => 'Non Tender',
-                'pagu' => 'Rp 50.000.000',
-                'hps' => 'Rp 49.500.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).',
-            ],
-            [
-                'id' => 111,
-                'judul' => 'Pengadaan Pakan Ternak Praktikum',
-                'tahun' => 2024,
-                'metode' => 'E-Purchasing',
-                'status' => 'Pemilihan',
-                'nilai_kontrak' => 'Rp. 135.000.000,00',
-
-                'unit' => 'Fakultas Peternakan',
-                'status_arsip' => 'Privat',
-                'idrup' => '2026-011',
-                'rekanan' => 'PT Agro Feed Nusantara',
-                'jenis' => 'E-Katalog',
-                'pagu' => 'Rp 150.000.000',
-                'hps' => 'Rp 147.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Kolom E opsional: sertifikat/COA tambahan (jika tersedia).',
-            ],
-            [
-                'id' => 112,
-                'judul' => 'Pengadaan Lisensi Software Pembelajaran',
-                'tahun' => 2023,
-                'metode' => 'Tender Cepat',
-                'status' => 'Perencanaan',
-                'nilai_kontrak' => 'Rp. 360.000.000,00',
-
-                'unit' => 'Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)',
-                'status_arsip' => 'Publik',
-                'idrup' => '2025-012',
-                'rekanan' => 'PT Edu Tech Solution',
-                'jenis' => 'Tender',
-                'pagu' => 'Rp 390.000.000',
-                'hps' => 'Rp 385.000.000',
-
-                'dokumen_tidak_dipersyaratkan' => 'Dokumen pada Kolom E tidak dipersyaratkan untuk pengadaan ini.',
-            ],
-        ];
-
-        $perPage = 10;
-        $page = (int) $request->query('page', 1);
-        if ($page < 1) $page = 1;
-
-        $total = count($arsipList);
-        $offset = ($page - 1) * $perPage;
-        $items = array_slice($arsipList, $offset, $perPage);
-
-        $arsips = new LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $page,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-
-        return view('PPK.ArsipPBJ', compact('ppkName', 'arsips'));
+        return view('PPK.ArsipPBJ', compact('ppkName', 'arsips', 'unitOptions', 'years'));
     }
 
     /**
-     * Edit Arsip (PPK)
-     * - ambil dari DB kalau ada
-     * - fallback dummy
-     */
-    public function arsipEdit($id)
-    {
-        $ppkName = auth()->user()->name ?? "PPK Utama";
-
-        try {
-            $pengadaan = Pengadaan::with('unit')->find($id);
-            if ($pengadaan) {
-                // mapping minimal yang dipakai blade edit kamu (judul, tahun, metode, status)
-                $arsip = (object) [
-                    'id' => $pengadaan->id,
-                    'judul' => $pengadaan->nama_pekerjaan ?? '-',
-                    'tahun' => $pengadaan->tahun ?? (int)date('Y'),
-                    'metode' => $pengadaan->jenis_pengadaan ?? '-',
-                    'status' => $pengadaan->status_pekerjaan ?? '-',
-                ];
-
-                return view('PPK.EditArsip', compact('ppkName', 'arsip'));
-            }
-        } catch (\Throwable $e) {
-            // fallback dummy
-        }
-
-        $arsip = (object) [
-            'id' => (int) $id,
-            'judul' => 'Pengadaan Server',
-            'tahun' => 2025,
-            'metode' => 'Tender Terbuka',
-            'status' => 'Pemilihan',
-        ];
-
-        return view('PPK.EditArsip', compact('ppkName', 'arsip'));
-    }
-
-    /**
-     * Update Arsip (PPK)
-     * - update DB (kolom baru)
-     */
-    public function arsipUpdate(Request $request, $id)
-    {
-        $request->validate([
-            'judul'  => 'nullable|string|max:255',
-            'tahun'  => 'nullable|integer|min:2000|max:' . (date('Y') + 5),
-            'metode' => 'nullable|string|max:255',
-            'status' => 'nullable|string|max:255',
-        ]);
-
-        try {
-            $pengadaan = Pengadaan::find($id);
-            if ($pengadaan) {
-                // mapping dari form edit (judul/tahun/metode/status) -> kolom pengadaans baru
-                if ($request->filled('judul'))  $pengadaan->nama_pekerjaan = $request->judul;
-                if ($request->filled('tahun'))  $pengadaan->tahun = (int)$request->tahun;
-                if ($request->filled('metode')) $pengadaan->jenis_pengadaan = $request->metode;
-                if ($request->filled('status')) $pengadaan->status_pekerjaan = $request->status;
-
-                $pengadaan->save();
-
-                return redirect()
-                    ->route('ppk.arsip')
-                    ->with('success', 'Arsip berhasil diperbarui (database).');
-            }
-        } catch (\Throwable $e) {
-            // fallback dummy
-        }
-
-        return redirect()
-            ->route('ppk.arsip')
-            ->with('success', 'Arsip berhasil diperbarui (dummy).');
-    }
-
-    /**
-     * Tampilkan form Tambah Pengadaan (PPK)
-     * - pastikan master Unit (27 unit + PPK) ada di DB
-     * - kirim $units untuk dropdown id-based
+     * ✅ HALAMAN TAMBAH PENGADAAN (PPK)
      */
     public function pengadaanCreate()
     {
         $ppkName = auth()->user()->name ?? "PPK Utama";
 
-        // ✅ pastikan master unit lengkap ada (termasuk PPK + unit_id "pertanian")
-        $this->ensureMasterUnits();
+        // Tahun options (ambil dari DB, fallback)
+        $tahunOptions = Pengadaan::whereNotNull('tahun')
+            ->select('tahun')->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
 
-        // ✅ urut nama
-        $units = Unit::orderBy('nama')->get();
+        if (count($tahunOptions) === 0) {
+            $y = (int)date('Y');
+            $tahunOptions = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
+        }
 
-        return view('PPK.TambahPengadaan', compact('ppkName', 'units'));
+        // Unit options untuk form (string)
+        $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+
+        $unitOptions = Unit::orderBy($unitNameCol, 'asc')->pluck($unitNameCol)->values()->all();
+
+        $jenisPengadaanOptions = [
+            "Pengadaan Langsung",
+            "Penunjukan Langsung",
+            "E-Purchasing / E-Catalog",
+            "Tender Terbatas",
+            "Tender Terbuka",
+            "Swakelola",
+        ];
+        $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+
+        return view('PPK.TambahPengadaan', compact(
+            'ppkName',
+            'tahunOptions',
+            'unitOptions',
+            'jenisPengadaanOptions',
+            'statusPekerjaanOptions'
+        ));
     }
 
     /**
-     * Simpan Pengadaan ke Database + Upload dokumen
-     * - support: unit_id numeric (PK) ATAU unit_id string/kode (mis: "pertanian")
-     * - support fallback: unit_kerja string (nama unit)
+     * ✅ SIMPAN PENGADAAN BARU (PPK)
      */
     public function pengadaanStore(Request $request)
     {
-        // ✅ pastikan master unit lengkap ada (biar dropdown/id selalu match DB)
-        $this->ensureMasterUnits();
-
-        // 1) Resolusi unit_id tanpa mengubah view
-        //    - jika view kirim unit_id (kode/string atau numeric) -> resolve ke PK units.id
-        //    - fallback: unit_kerja (nama)
-        $rawUnit = $request->input('unit_id');
-
-        $resolvedUnitId = $this->resolveUnitId($rawUnit);
-
-        if (!$resolvedUnitId) {
-            $unitKerja = trim((string) $request->input('unit_kerja', ''));
-            if ($unitKerja !== '') {
-                $unit = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($unitKerja)])->first();
-                if (!$unit) {
-                    return back()->withErrors(['unit_kerja' => 'Unit kerja belum ada di master units.'])->withInput();
-                }
-                $resolvedUnitId = $unit->id;
-            }
-        }
-
-        if (!$resolvedUnitId) {
-            return back()->withErrors(['unit_id' => 'Unit wajib dipilih.'])->withInput();
-        }
-
-        // 2) Validasi field sesuai FORM kamu (tanpa ubah file view)
-        $data = $request->validate([
-            // Informasi umum
+        $rules = [
             'tahun' => 'required|integer|min:2000|max:' . (date('Y') + 5),
+            'unit_kerja' => 'required|string|max:255',
+
             'nama_pekerjaan' => 'nullable|string|max:255',
             'id_rup' => 'nullable|string|max:255',
             'jenis_pengadaan' => 'required|string|max:100',
             'status_pekerjaan' => 'required|string|max:100',
-
-            // akses arsip
             'status_arsip' => 'required|in:Publik,Privat',
 
-            // anggaran (di form biasanya string rupiah)
             'pagu_anggaran' => 'nullable|string|max:50',
             'hps' => 'nullable|string|max:50',
             'nilai_kontrak' => 'nullable|string|max:50',
             'nama_rekanan' => 'nullable|string|max:255',
 
-            // hidden json
             'dokumen_tidak_dipersyaratkan_json' => 'nullable|string',
-        ]);
+            'dokumen_tidak_dipersyaratkan' => 'nullable|array',
+        ];
 
-        // 3) Normalisasi rupiah -> integer
+        $data = $request->validate($rules);
+
+        $resolvedUnitId = $this->resolveUnitId($data['unit_kerja'] ?? null);
+        if (!$resolvedUnitId) {
+            return redirect()->back()->withInput()->withErrors(['unit_kerja' => 'Unit kerja tidak valid / tidak ditemukan di database.']);
+        }
+
         $toInt = function ($v) {
             if ($v === null) return null;
             $num = preg_replace('/[^0-9]/', '', (string)$v);
             return $num === '' ? null : (int)$num;
         };
-        $data['pagu_anggaran'] = $toInt($data['pagu_anggaran'] ?? null);
-        $data['hps'] = $toInt($data['hps'] ?? null);
-        $data['nilai_kontrak'] = $toInt($data['nilai_kontrak'] ?? null);
 
-        // 4) Parse dokumen tidak dipersyaratkan json
-        $data['dokumen_tidak_dipersyaratkan'] = [];
-        if (!empty($data['dokumen_tidak_dipersyaratkan_json'])) {
-            $decoded = json_decode($data['dokumen_tidak_dipersyaratkan_json'], true);
-            if (is_array($decoded)) $data['dokumen_tidak_dipersyaratkan'] = $decoded;
-        }
-        unset($data['dokumen_tidak_dipersyaratkan_json']);
+        $payload = [
+            'tahun' => (int)$data['tahun'],
+            'unit_id' => (int)$resolvedUnitId,
+            'created_by' => Auth::id(),
 
-        // 5) Set kolom wajib DB
-        $data['unit_id'] = (int)$resolvedUnitId;
-        $data['created_by'] = Auth::id();
+            'nama_pekerjaan' => $data['nama_pekerjaan'] ?? null,
+            'id_rup' => $data['id_rup'] ?? null,
+            'jenis_pengadaan' => $data['jenis_pengadaan'],
+            'status_pekerjaan' => $data['status_pekerjaan'],
+            'status_arsip' => $data['status_arsip'],
 
-        // 6) create dulu untuk dapat id (folder upload rapi)
-        $pengadaan = Pengadaan::create($data);
-
-        // 7) Upload dokumen multiple sesuai field name di form
-        $fileFields = [
-            'dokumen_kak','dokumen_hps','dokumen_spesifikasi_teknis','dokumen_rancangan_kontrak',
-            'dokumen_lembar_data_kualifikasi','dokumen_lembar_data_pemilihan','dokumen_daftar_kuantitas_harga',
-            'dokumen_jadwal_lokasi_pekerjaan','dokumen_gambar_rancangan_pekerjaan','dokumen_amdal',
-            'dokumen_penawaran','surat_penawaran','dokumen_kemenkumham','ba_pemberian_penjelasan',
-            'ba_pengumuman_negosiasi','ba_sanggah_banding','ba_penetapan','laporan_hasil_pemilihan',
-            'dokumen_sppbj','surat_perjanjian_kemitraan','surat_perjanjian_swakelola',
-            'surat_penugasan_tim_swakelola','dokumen_mou','dokumen_kontrak','ringkasan_kontrak',
-            'jaminan_pelaksanaan','jaminan_uang_muka','jaminan_pemeliharaan','surat_tagihan',
-            'surat_pesanan_epurchasing','dokumen_spmk','dokumen_sppd','laporan_pelaksanaan_pekerjaan',
-            'laporan_penyelesaian_pekerjaan','bap','bast_sementara','bast_akhir','dokumen_pendukung_lainya',
+            'pagu_anggaran' => $toInt($data['pagu_anggaran'] ?? null),
+            'hps' => $toInt($data['hps'] ?? null),
+            'nilai_kontrak' => $toInt($data['nilai_kontrak'] ?? null),
+            'nama_rekanan' => $data['nama_rekanan'] ?? null,
         ];
 
-        foreach ($fileFields as $field) {
-            if ($request->hasFile($field)) {
-                $paths = [];
-                foreach ((array) $request->file($field) as $file) {
-                    if (!$file) continue;
-                    $filename = Str::random(8) . '_' . time() . '.' . $file->getClientOriginalExtension();
-                    $stored = $file->storeAs("public/pengadaan/{$pengadaan->id}/{$field}", $filename);
-                    $paths[] = Str::replaceFirst('public/', '', $stored); // simpan tanpa "public/"
-                }
-                $pengadaan->{$field} = $paths;
+        // Kolom E (dukungan array atau json)
+        $docTidak = [];
+        if (is_array($request->input('dokumen_tidak_dipersyaratkan'))) {
+            $docTidak = $request->input('dokumen_tidak_dipersyaratkan');
+        } else {
+            $json = $request->input('dokumen_tidak_dipersyaratkan_json');
+            if (is_string($json) && trim($json) !== '') {
+                $decoded = json_decode($json, true);
+                if (is_array($decoded)) $docTidak = $decoded;
             }
         }
+        $payload['dokumen_tidak_dipersyaratkan'] = array_values(array_filter($docTidak, fn($x) => $x !== null && $x !== ''));
 
-        $pengadaan->save();
+        DB::beginTransaction();
+        try {
+            $pengadaan = Pengadaan::create($payload);
 
-        // ✅ setelah save, langsung muncul di PPK/Arsip karena arsipIndex ambil dari DB (latest)
-        return redirect()
-            ->route('ppk.arsip')
-            ->with('success', 'Pengadaan baru berhasil ditambahkan!');
+            $this->handleUploadDokumenToModel($request, $pengadaan, false);
+            $pengadaan->save();
+
+            DB::commit();
+
+            return redirect()->route('ppk.arsip')->with('success', 'Pengadaan baru berhasil ditambahkan!');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            if (isset($pengadaan) && $pengadaan instanceof Pengadaan) {
+                try { Storage::disk('public')->deleteDirectory("pengadaan/{$pengadaan->id}"); } catch (\Throwable $ex) {}
+                try { $pengadaan->delete(); } catch (\Throwable $ex) {}
+            }
+
+            return redirect()->back()->withInput()->withErrors(['upload' => 'Gagal menyimpan pengadaan/dokumen.']);
+        }
+    }
+
+    public function arsipEdit($id)
+    {
+        $ppkName = auth()->user()->name ?? "PPK Utama";
+
+        $pengadaan = Pengadaan::with('unit')->findOrFail($id);
+        $arsip = $pengadaan;
+
+        $tahunOptions = Pengadaan::whereNotNull('tahun')
+            ->select('tahun')->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
+
+        if (count($tahunOptions) === 0) {
+            $y = (int)date('Y');
+            $tahunOptions = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
+        }
+
+        $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+
+        $unitOptions = Unit::orderBy($unitNameCol, 'asc')->pluck($unitNameCol)->values()->all();
+
+        $jenisPengadaanOptions = [
+            "Pengadaan Langsung",
+            "Penunjukan Langsung",
+            "E-Purchasing / E-Catalog",
+            "Tender Terbatas",
+            "Tender Terbuka",
+            "Swakelola",
+        ];
+        $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
+
+        $pengadaan->dokumen_tidak_dipersyaratkan = $this->normalizeArray($pengadaan->dokumen_tidak_dipersyaratkan);
+
+        return view('ppk.EditArsip', compact(
+            'ppkName',
+            'pengadaan',
+            'arsip',
+            'tahunOptions',
+            'unitOptions',
+            'jenisPengadaanOptions',
+            'statusPekerjaanOptions'
+        ));
+    }
+
+    public function arsipUpdate(Request $request, $id)
+    {
+        $pengadaan = Pengadaan::findOrFail($id);
+
+        $rules = [
+            'tahun' => 'nullable|integer|min:2000|max:' . (date('Y') + 5),
+            'unit_kerja' => 'nullable|string|max:255',
+
+            'nama_pekerjaan' => 'nullable|string|max:255',
+            'id_rup' => 'nullable|string|max:255',
+            'jenis_pengadaan' => 'nullable|string|max:100',
+            'status_pekerjaan' => 'nullable|string|max:100',
+            'status_arsip' => 'nullable|in:Publik,Privat',
+
+            'pagu_anggaran' => 'nullable|string|max:50',
+            'hps' => 'nullable|string|max:50',
+            'nilai_kontrak' => 'nullable|string|max:50',
+            'nama_rekanan' => 'nullable|string|max:255',
+
+            'dokumen_tidak_dipersyaratkan_json' => 'nullable|string',
+            'dokumen_tidak_dipersyaratkan' => 'nullable|array',
+        ];
+
+        $data = $request->validate($rules);
+
+        $toInt = function ($v) {
+            if ($v === null) return null;
+            $num = preg_replace('/[^0-9]/', '', (string)$v);
+            return $num === '' ? null : (int)$num;
+        };
+
+        DB::beginTransaction();
+        try {
+            if ($request->filled('tahun')) $pengadaan->tahun = (int)$data['tahun'];
+
+            if ($request->filled('unit_kerja')) {
+                $resolvedUnitId = $this->resolveUnitId($data['unit_kerja']);
+                if (!$resolvedUnitId) {
+                    DB::rollBack();
+                    return redirect()->back()->withInput()->withErrors(['unit_kerja' => 'Unit kerja tidak valid / tidak ditemukan di database.']);
+                }
+                $pengadaan->unit_id = (int)$resolvedUnitId;
+            }
+
+            if ($request->filled('nama_pekerjaan')) $pengadaan->nama_pekerjaan = $data['nama_pekerjaan'];
+            if ($request->filled('id_rup')) $pengadaan->id_rup = $data['id_rup'];
+            if ($request->filled('jenis_pengadaan')) $pengadaan->jenis_pengadaan = $data['jenis_pengadaan'];
+            if ($request->filled('status_pekerjaan')) $pengadaan->status_pekerjaan = $data['status_pekerjaan'];
+            if ($request->filled('status_arsip')) $pengadaan->status_arsip = $data['status_arsip'];
+
+            if (array_key_exists('pagu_anggaran', $data)) $pengadaan->pagu_anggaran = $toInt($data['pagu_anggaran']);
+            if (array_key_exists('hps', $data)) $pengadaan->hps = $toInt($data['hps']);
+            if (array_key_exists('nilai_kontrak', $data)) $pengadaan->nilai_kontrak = $toInt($data['nilai_kontrak']);
+            if (array_key_exists('nama_rekanan', $data)) $pengadaan->nama_rekanan = $data['nama_rekanan'];
+
+            $docTidak = [];
+            if (is_array($request->input('dokumen_tidak_dipersyaratkan'))) {
+                $docTidak = $request->input('dokumen_tidak_dipersyaratkan');
+            } else {
+                $json = $request->input('dokumen_tidak_dipersyaratkan_json');
+                if (is_string($json) && trim($json) !== '') {
+                    $decoded = json_decode($json, true);
+                    if (is_array($decoded)) $docTidak = $decoded;
+                }
+            }
+            $pengadaan->dokumen_tidak_dipersyaratkan = array_values(array_filter($docTidak, fn($x) => $x !== null && $x !== ''));
+
+            $this->handleUploadDokumenToModel($request, $pengadaan, true);
+            $this->handleRemoveExistingByHiddenInputs($request, $pengadaan);
+
+            $pengadaan->save();
+            DB::commit();
+
+            return redirect()->route('ppk.arsip')->with('success', 'Arsip berhasil diperbarui.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return redirect()->back()->withInput()->withErrors(['update' => 'Gagal memperbarui arsip.']);
+        }
+    }
+
+    public function arsipDelete($id)
+    {
+        $pengadaan = Pengadaan::findOrFail($id);
+
+        DB::beginTransaction();
+        try {
+            try { Storage::disk('public')->deleteDirectory("pengadaan/{$pengadaan->id}"); } catch (\Throwable $e) {}
+            $pengadaan->delete();
+
+            DB::commit();
+            return redirect()->route('ppk.arsip')->with('success', 'Arsip berhasil dihapus.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return redirect()->back()->withErrors(['delete' => 'Gagal menghapus arsip.']);
+        }
+    }
+
+    public function hapusDokumenFile(Request $request, $id)
+    {
+        $pengadaan = Pengadaan::findOrFail($id);
+
+        $field = (string)$request->input('field', '');
+        $path  = (string)$request->input('path', '');
+
+        if ($field === '' || $path === '') {
+            return response()->json(['message' => 'Field/path tidak valid.'], 422);
+        }
+
+        if (!array_key_exists($field, $pengadaan->getAttributes())) {
+            return response()->json(['message' => 'Field dokumen tidak ditemukan.'], 404);
+        }
+
+        $arr = $this->normalizeArray($pengadaan->{$field});
+        $normPath = $this->normalizePublicDiskPath($path);
+
+        if (!$normPath) {
+            return response()->json(['message' => 'Path tidak valid.'], 422);
+        }
+
+        $new = array_values(array_filter($arr, function ($x) use ($normPath) {
+            $p = $this->normalizePublicDiskPath($x);
+            return $p !== $normPath;
+        }));
+
+        DB::beginTransaction();
+        try {
+            try { Storage::disk('public')->delete($normPath); } catch (\Throwable $e) {}
+
+            $pengadaan->{$field} = $new;
+            $pengadaan->save();
+
+            DB::commit();
+            return response()->json(['ok' => true]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Gagal menghapus file.'], 500);
+        }
     }
 
     // =========================
-    // ✅ KELOLA AKUN (PPK)
+    // KELOLA AKUN (PPK)
     // =========================
     public function kelolaAkun()
     {
@@ -547,30 +630,18 @@ class PpkController extends Controller
         return view('PPK.KelolaAkun', compact('ppkName'));
     }
 
-    /**
-     * Update akun (name/email + optional password)
-     */
     public function updateAkun(Request $request)
     {
         $user = auth()->user();
-
         if (!$user) {
-            return redirect()
-                ->back()
-                ->withErrors(['auth' => 'Kamu belum login. Silakan login dulu.'])
-                ->withInput();
+            return redirect()->back()->withErrors(['auth' => 'Kamu belum login.'])->withInput();
         }
 
         $wantsPasswordChange = $request->filled('password') || $request->filled('password_confirmation');
 
         $rules = [
             'name'  => ['required', 'string', 'max:255'],
-            'email' => [
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('users', 'email')->ignore($user->id),
-            ],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
         ];
 
         if ($wantsPasswordChange) {
@@ -588,102 +659,237 @@ class PpkController extends Controller
 
         if ($wantsPasswordChange) {
             if (!Hash::check($data['current_password'], $user->password)) {
-                return redirect()
-                    ->back()
-                    ->withErrors(['current_password' => 'Password saat ini salah.'])
-                    ->withInput();
+                return redirect()->back()->withErrors(['current_password' => 'Password saat ini salah.'])->withInput();
             }
-
             $user->password = Hash::make($data['password']);
         }
 
         $user->save();
 
-        return redirect()
-            ->route('ppk.kelola.akun')
-            ->with('success', 'Akun berhasil diperbarui.');
+        return redirect()->route('ppk.kelola.akun')->with('success', 'Akun berhasil diperbarui.');
     }
 
     /**
-     * =========================
-     * ✅ MASTER UNIT (27 Unit + PPK)
-     * - untuk dropdown Unit Kerja berbasis "unit id" (kode) seperti: pertanian, biologi, dst
-     * - termasuk PPK sendiri di dropdown
-     * =========================
+     * ✅ LIHAT FILE (INLINE) - PPK
      */
-    private function ensureMasterUnits(): void
+    public function showDokumen($id, $field, $file)
     {
-        // kalau tabel units belum ada / migrasi belum jalan, jangan bikin error
-        try {
-            if (!Schema::hasTable('units')) return;
-        } catch (\Throwable $e) {
-            return;
-        }
+        $pengadaan = Pengadaan::findOrFail($id);
 
-        // NOTE:
-        // - "unit ID" yang kamu maksud: kita anggap sebagai kolom "kode" / "slug" / "unit_id"
-        // - kalau di tabel units kamu belum punya kolom itu, fungsi ini akan tetap membuat data minimal (nama saja)
-        //   dan dropdown id-based tetap bisa pakai PK numeric units.id.
-        $master = [
-            ['kode' => 'pertanian', 'nama' => 'Fakultas Pertanian'],
-            ['kode' => 'biologi', 'nama' => 'Fakultas Biologi'],
-            ['kode' => 'feb', 'nama' => 'Fakultas Ekonomi dan Bisnis'],
-            ['kode' => 'peternakan', 'nama' => 'Fakultas Peternakan'],
-            ['kode' => 'hukum', 'nama' => 'Fakultas Hukum'],
-            ['kode' => 'fisip', 'nama' => 'Fakultas Ilmu Sosial dan Ilmu Politik'],
-            ['kode' => 'kedokteran', 'nama' => 'Fakultas Kedokteran'],
-            ['kode' => 'teknik', 'nama' => 'Fakultas Teknik'],
-            ['kode' => 'fikes', 'nama' => 'Fakultas Ilmu-Ilmu Kesehatan'],
-            ['kode' => 'fib', 'nama' => 'Fakultas Ilmu Budaya'],
-            ['kode' => 'fmipa', 'nama' => 'Fakultas Matematika dan Ilmu Pengetahuan Alam'],
-            ['kode' => 'fpi', 'nama' => 'Fakultas Perikanan dan Ilmu Kelautan'],
-            ['kode' => 'pascasarjana', 'nama' => 'Pascasarjana'],
-            ['kode' => 'lppm', 'nama' => 'Lembaga Penelitian dan Pengabdian Kepada Masyarakat (LPPM)'],
-            ['kode' => 'lpmpp', 'nama' => 'Lembaga Penjaminan Mutu dan Pengembangan Pembelajaran (LPMPP)'],
-            ['kode' => 'biro-akademik-kemahasiswaan', 'nama' => 'Biro Akademik dan Kemahasiswaan'],
-            ['kode' => 'biro-perencanaan-kerjasama-humas', 'nama' => 'Biro Perencanaan, Kerjasama, dan Hubungan Masyarakat'],
-            ['kode' => 'biro-keuangan-umum', 'nama' => 'Biro Keuangan dan Umum'],
-            ['kode' => 'badan-pengelola-usaha', 'nama' => 'Badan Pengelola Usaha'],
-            ['kode' => 'rsgmp', 'nama' => 'Rumah Sakit Gigi dan Mulut Pendidikan (RSGMP)'],
-            ['kode' => 'spi', 'nama' => 'Satuan Pengawasan Internal'],
-            ['kode' => 'upa-perpustakaan', 'nama' => 'UPA Perpustakaan'],
-            ['kode' => 'upa-bahasa', 'nama' => 'UPA Bahasa'],
-            ['kode' => 'upa-layanan-laboratorium-terpadu', 'nama' => 'UPA Layanan Laboratorium Terpadu'],
-            ['kode' => 'upa-layanan-uji-kompetensi', 'nama' => 'UPA Layanan Uji Kompetensi'],
-            ['kode' => 'upa-pengembangan-karir-kewirausahaan', 'nama' => 'UPA Pengembangan Karir dan Kewirausahaan'],
-            ['kode' => 'upa-tik', 'nama' => 'UPA Teknologi Informasi dan Komunikasi'],
-            // ✅ PPK sendiri masuk dropdown
-            ['kode' => 'ppk', 'nama' => 'PPK'],
-        ];
+        if (!isset($pengadaan->{$field})) abort(404);
 
-        // prefer kolom kode/slug/unit_id kalau ada
-        $hasKode = Schema::hasColumn('units', 'kode');
-        $hasSlug = Schema::hasColumn('units', 'slug');
-        $hasUnitIdCol = Schema::hasColumn('units', 'unit_id');
+        $arr = $this->normalizeArray($pengadaan->{$field});
 
-        foreach ($master as $row) {
-            try {
-                if ($hasKode) {
-                    Unit::updateOrCreate(['kode' => $row['kode']], ['nama' => $row['nama']]);
-                } elseif ($hasSlug) {
-                    Unit::updateOrCreate(['slug' => $row['kode']], ['nama' => $row['nama']]);
-                } elseif ($hasUnitIdCol) {
-                    Unit::updateOrCreate(['unit_id' => $row['kode']], ['nama' => $row['nama']]);
-                } else {
-                    // fallback: minimal berdasarkan nama
-                    Unit::firstOrCreate(['nama' => $row['nama']], ['nama' => $row['nama']]);
-                }
-            } catch (\Throwable $e) {
-                // jangan bikin form gagal kebuka hanya karena seeder-like gagal
+        foreach ($arr as $raw) {
+            $path = $this->normalizePublicDiskPath($raw);
+            if (!$path) continue;
+
+            if (basename($path) === $file) {
+                $publicUrl = '/storage/' . ltrim($path, '/');
+                return redirect()->route('file.viewer', ['file' => $publicUrl]);
             }
         }
+
+        abort(404);
     }
 
-    /**
-     * Resolve unit_id dari input:
-     * - numeric => langsung jadi units.id
-     * - string => dicari di kolom (kode/slug/unit_id) bila ada, atau fallback ke nama (case-insensitive)
-     */
+    // =========================
+    // HELPERS
+    // =========================
+    private function handleRemoveExistingByHiddenInputs(Request $request, Pengadaan $pengadaan): void
+    {
+        $fileFields = array_keys($this->dokumenFieldLabels());
+
+        foreach ($fileFields as $field) {
+            $removeKey = $field . '_remove';
+            $toRemove = $request->input($removeKey);
+
+            if (!is_array($toRemove) || count($toRemove) === 0) continue;
+
+            $current = $this->normalizeArray($pengadaan->{$field});
+            $removeNorm = array_values(array_filter(array_map(fn($x) => $this->normalizePublicDiskPath($x), $toRemove)));
+
+            if (count($removeNorm) === 0) continue;
+
+            $new = array_values(array_filter($current, function ($x) use ($removeNorm) {
+                $p = $this->normalizePublicDiskPath($x);
+                return $p && !in_array($p, $removeNorm, true);
+            }));
+
+            foreach ($removeNorm as $p) {
+                try { Storage::disk('public')->delete($p); } catch (\Throwable $e) {}
+            }
+
+            $pengadaan->{$field} = $new;
+        }
+    }
+
+    private function handleUploadDokumenToModel(Request $request, Pengadaan $pengadaan, bool $append = true): void
+    {
+        $fileFields = array_keys($this->dokumenFieldLabels());
+
+        foreach ($fileFields as $field) {
+            if (!$request->hasFile($field)) continue;
+
+            $uploaded = $request->file($field);
+            $files = is_array($uploaded) ? $uploaded : [$uploaded];
+
+            $paths = $append ? $this->normalizeArray($pengadaan->{$field}) : [];
+
+            foreach ($files as $file) {
+                if (!$file || !$file->isValid()) continue;
+
+                $ext = strtolower($file->getClientOriginalExtension());
+                $base = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+
+                $safeBase = Str::slug($base);
+                if ($safeBase === '') $safeBase = 'dokumen';
+
+                $filename = $safeBase . '_' . date('Ymd_His') . '_' . Str::random(6) . '.' . $ext;
+
+                $stored = $file->storeAs("pengadaan/{$pengadaan->id}/{$field}", $filename, 'public');
+                if ($stored) $paths[] = $stored;
+            }
+
+            $pengadaan->{$field} = array_values($paths);
+        }
+    }
+
+    private function buildDokumenList(Pengadaan $p): array
+    {
+        $labels = $this->dokumenFieldLabels();
+        $attrs  = $p->getAttributes();
+
+        $out = [];
+
+        foreach ($attrs as $field => $rawValue) {
+            $lk = strtolower((string)$field);
+
+            if (!(str_contains($lk, 'dokumen') || str_contains($lk, 'file') || str_contains($lk, 'lampiran'))) {
+                continue;
+            }
+
+            if (in_array($field, ['dokumen_tidak_dipersyaratkan', 'dokumen_tidak_dipersyaratkan_json'], true)) {
+                continue;
+            }
+
+            $files = $this->normalizeArray($rawValue);
+            if (count($files) === 0) continue;
+
+            $label = $labels[$field] ?? Str::title(str_replace('_', ' ', $field));
+
+            foreach ($files as $one) {
+                $path = $this->normalizePublicDiskPath($one);
+                if (!$path) continue;
+
+                $file = basename($path);
+
+                $out[$field][] = [
+                    'label' => $label,
+                    'name'  => $file,
+                    'path'  => $path,
+                    'url'   => '/storage/' . ltrim($path, '/'),
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    private function normalizePublicDiskPath($raw): ?string
+    {
+        if ($raw === null) return null;
+
+        $s = trim((string)$raw);
+        if ($s === '') return null;
+
+        $s = str_replace('\\', '/', $s);
+        $s = explode('?', $s)[0];
+
+        if (Str::startsWith($s, ['http://', 'https://'])) {
+            $u = parse_url($s);
+            if (!empty($u['path'])) $s = $u['path'];
+        }
+
+        $s = ltrim($s, '/');
+
+        if (Str::startsWith($s, 'public/'))  $s = Str::after($s, 'public/');
+        if (Str::startsWith($s, 'storage/')) $s = Str::after($s, 'storage/');
+        $s = preg_replace('#^storage/#', '', $s);
+
+        return $s !== '' ? $s : null;
+    }
+
+    private function dokumenFieldLabels(): array
+    {
+        return [
+            'dokumen_kak' => 'Kerangka Acuan Kerja (KAK)',
+            'dokumen_hps' => 'Harga Perkiraan Sendiri (HPS)',
+            'dokumen_spesifikasi_teknis' => 'Spesifikasi Teknis',
+            'dokumen_rancangan_kontrak' => 'Rancangan Kontrak',
+            'dokumen_lembar_data_kualifikasi' => 'Lembar Data Kualifikasi',
+            'dokumen_lembar_data_pemilihan' => 'Lembar Data Pemilihan',
+            'dokumen_daftar_kuantitas_harga' => 'Daftar Kuantitas dan Harga',
+            'dokumen_jadwal_lokasi_pekerjaan' => 'Jadwal & Lokasi Pekerjaan',
+            'dokumen_gambar_rancangan_pekerjaan' => 'Gambar Rancangan Pekerjaan',
+            'dokumen_amdal' => 'Dokumen AMDAL',
+            'dokumen_penawaran' => 'Dokumen Penawaran',
+            'surat_penawaran' => 'Surat Penawaran',
+            'dokumen_kemenkumham' => 'Kemenkumham',
+            'ba_pemberian_penjelasan' => 'BA Pemberian Penjelasan',
+            'ba_pengumuman_negosiasi' => 'BA Pengumuman Negosiasi',
+            'ba_sanggah_banding' => 'BA Sanggah / Sanggah Banding',
+            'ba_penetapan' => 'BA Penetapan',
+            'laporan_hasil_pemilihan' => 'Laporan Hasil Pemilihan',
+            'dokumen_sppbj' => 'SPPBJ',
+            'surat_perjanjian_kemitraan' => 'Perjanjian Kemitraan',
+            'surat_perjanjian_swakelola' => 'Perjanjian Swakelola',
+            'surat_penugasan_tim_swakelola' => 'Penugasan Tim Swakelola',
+            'dokumen_mou' => 'MoU',
+            'dokumen_kontrak' => 'Dokumen Kontrak',
+            'ringkasan_kontrak' => 'Ringkasan Kontrak',
+            'jaminan_pelaksanaan' => 'Jaminan Pelaksanaan',
+            'jaminan_uang_muka' => 'Jaminan Uang Muka',
+            'jaminan_pemeliharaan' => 'Jaminan Pemeliharaan',
+            'surat_tagihan' => 'Surat Tagihan',
+            'surat_pesanan_epurchasing' => 'Surat Pesanan E-Purchasing',
+            'dokumen_spmk' => 'SPMK',
+            'dokumen_sppd' => 'SPPD',
+            'laporan_pelaksanaan_pekerjaan' => 'Laporan Hasil Pelaksanaan',
+            'laporan_penyelesaian_pekerjaan' => 'Laporan Penyelesaian',
+            'bap' => 'BAP',
+            'bast_sementara' => 'BAST Sementara',
+            'bast_akhir' => 'BAST Akhir',
+            'dokumen_pendukung_lainya' => 'Dokumen Pendukung Lainnya',
+        ];
+    }
+
+    private function normalizeArray($value): array
+    {
+        if ($value === null) return [];
+
+        if (is_array($value)) {
+            return array_values(array_filter($value, fn($v) => $v !== null && $v !== ''));
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                return array_values(array_filter($decoded, fn($v) => $v !== null && $v !== ''));
+            }
+            return $value !== '' ? [$value] : [];
+        }
+
+        return [];
+    }
+
+    private function formatRupiah($value): string
+    {
+        if ($value === null || $value === '') return '-';
+        $num = (int)$value;
+        return 'Rp ' . number_format($num, 0, ',', '.');
+    }
+
     private function resolveUnitId($rawUnit): ?int
     {
         if ($rawUnit === null) return null;
@@ -691,10 +897,7 @@ class PpkController extends Controller
         $raw = trim((string)$rawUnit);
         if ($raw === '') return null;
 
-        // numeric PK
-        if (ctype_digit($raw)) {
-            return (int)$raw;
-        }
+        if (ctype_digit($raw)) return (int)$raw;
 
         if (!Schema::hasTable('units')) return null;
 
@@ -702,7 +905,6 @@ class PpkController extends Controller
         $hasSlug = Schema::hasColumn('units', 'slug');
         $hasUnitIdCol = Schema::hasColumn('units', 'unit_id');
 
-        // cari berdasarkan "unit id" (kode) seperti: pertanian, biologi, dst
         try {
             if ($hasKode) {
                 $u = Unit::whereRaw('LOWER(kode) = ?', [mb_strtolower($raw)])->first();
@@ -717,23 +919,19 @@ class PpkController extends Controller
                 if ($u) return (int)$u->id;
             }
 
-            // fallback terakhir: nama unit
-            $u = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($raw)])->first();
-            if ($u) return (int)$u->id;
+            if (Schema::hasColumn('units', 'nama')) {
+                $u = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($raw)])->first();
+                if ($u) return (int)$u->id;
+            }
+
+            if (Schema::hasColumn('units', 'name')) {
+                $u2 = Unit::whereRaw('LOWER(name) = ?', [mb_strtolower($raw)])->first();
+                if ($u2) return (int)$u2->id;
+            }
         } catch (\Throwable $e) {
             return null;
         }
 
         return null;
-    }
-
-    /**
-     * Helper format rupiah
-     */
-    private function formatRupiah($value): string
-    {
-        if ($value === null || $value === '') return '-';
-        $num = (int) $value;
-        return 'Rp ' . number_format($num, 0, ',', '.');
     }
 }

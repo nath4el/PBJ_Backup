@@ -15,11 +15,12 @@ use App\Http\Controllers\PPK\PpkController;
 */
 Route::view('/', 'Landing.Index')->name('landing');
 
-// Login (GET form, POST proses)
+// Login (GET form)
 Route::get('/login', function () {
     return view('Auth.login');
 })->name('login');
 
+// Login (POST proses)
 Route::post('/login', function (Request $request) {
     $credentials = $request->validate([
         'email'    => ['required', 'email'],
@@ -82,17 +83,16 @@ Route::middleware('auth')->group(function () {
     })->name('dashboard');
 
     /**
-     * ✅ FILE VIEWER (UNTUK UNIT & PPK)
+     * ✅ FILE VIEWER (GLOBAL, dipakai UNIT & PPK)
      * GET /file-viewer?file=...
-     * (Controller sudah anti double-wrap + validasi /storage)
      */
     Route::get('/file-viewer', [UnitController::class, 'fileViewer'])
         ->name('file.viewer');
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | UNIT ROUTES
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
     Route::prefix('unit')->name('unit.')->group(function () {
 
@@ -108,25 +108,28 @@ Route::middleware('auth')->group(function () {
         Route::get('/arsip', [UnitController::class, 'arsipIndex'])
             ->name('arsip');
 
+        // alias
         Route::get('/arsippbj', [UnitController::class, 'arsipIndex'])
             ->name('arsippbj');
 
         Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])
             ->name('arsip.pbj');
 
-        // ✅ EDIT + UPDATE (FIX: WAJIB ADA supaya EditArsip jalan)
+        // ✅ EDIT + UPDATE
         Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])
             ->name('arsip.edit');
 
         Route::put('/arsip/{id}', [UnitController::class, 'arsipUpdate'])
             ->name('arsip.update');
 
+        // ✅ DELETE (bulk + single)
         Route::delete('/arsip', [UnitController::class, 'arsipBulkDestroy'])
             ->name('arsip.bulkDestroy');
 
         Route::delete('/arsip/{id}', [UnitController::class, 'arsipDestroy'])
             ->name('arsip.destroy');
 
+        // ✅ CREATE
         Route::get('/pengadaan/tambah', [UnitController::class, 'pengadaanCreate'])
             ->name('pengadaan.create');
 
@@ -134,7 +137,8 @@ Route::middleware('auth')->group(function () {
             ->name('pengadaan.store');
 
         /**
-         * ✅ LIHAT dokumen (INLINE) -> showDokumen akan redirect ke file.viewer dengan /storage/...
+         * ✅ LIHAT dokumen (INLINE)
+         * showDokumen -> redirect ke route('file.viewer', ['file' => '/storage/...'])
          */
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [UnitController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
@@ -146,6 +150,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/arsip/{id}/dokumen-download', [UnitController::class, 'downloadDokumen'])
             ->name('arsip.dokumen.download');
 
+        // ✅ AKUN
         Route::get('/kelola-akun', [UnitController::class, 'kelolaAkun'])
             ->name('kelola.akun');
 
@@ -154,14 +159,18 @@ Route::middleware('auth')->group(function () {
     });
 
     /*
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     | PPK ROUTES
-    |----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
     */
     Route::prefix('ppk')->name('ppk.')->group(function () {
 
         Route::get('/dashboard', [PpkController::class, 'dashboard'])
             ->name('dashboard');
+
+        // ✅ TAMBAHAN: endpoint statistik dashboard (biar route('ppk.dashboard.data') gak error)
+        Route::get('/dashboard/data', [PpkController::class, 'dashboardData'])
+            ->name('dashboard.data');
 
         Route::get('/arsip', [PpkController::class, 'arsipIndex'])
             ->name('arsip');
@@ -172,6 +181,14 @@ Route::middleware('auth')->group(function () {
         Route::put('/arsip/{id}', [PpkController::class, 'arsipUpdate'])
             ->name('arsip.update');
 
+        // ✅✅ FIX UTAMA: ROUTE HAPUS ARSIP PPK (sesuai yang dipanggil Blade: /ppk/arsip/{id}/delete)
+        Route::delete('/arsip/{id}/delete', [PpkController::class, 'arsipDelete'])
+            ->name('arsip.delete');
+
+        // (Opsional, REST style)
+        // Route::delete('/arsip/{id}', [PpkController::class, 'arsipDestroy'])
+        //     ->name('arsip.destroy');
+
         Route::get('/pengadaan/tambah', [PpkController::class, 'pengadaanCreate'])
             ->name('pengadaan.create');
 
@@ -179,15 +196,12 @@ Route::middleware('auth')->group(function () {
             ->name('pengadaan.store');
 
         /**
-         * ✅ LIHAT dokumen PPK
-         * PpkController@showDokumen juga harus redirect ke route('file.viewer', ['file' => '/storage/...'])
+         * ✅ ROUTE DOKUMEN PPK (WAJIB, dipakai buildDokumenList & showDokumen)
+         * route('ppk.arsip.dokumen.show', ...)
          */
         Route::get('/arsip/{id}/dokumen/{field}/{file}', [PpkController::class, 'showDokumen'])
             ->where(['field' => '[A-Za-z0-9_\-]+', 'file' => '.+'])
             ->name('arsip.dokumen.show');
-
-        Route::get('/arsip/{id}/dokumen-download', [PpkController::class, 'downloadDokumen'])
-            ->name('arsip.dokumen.download');
 
         Route::get('/kelola-akun', [PpkController::class, 'kelolaAkun'])
             ->name('kelola.akun');

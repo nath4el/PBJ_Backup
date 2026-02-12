@@ -185,22 +185,27 @@
             <div class="tp-grid">
               <div class="tp-field">
                 <label class="tp-label">Tahun</label>
-                <div class="tp-control">
-                  <select name="tahun" class="tp-select" required>
+                <div class="tp-control tp-dd">
+                  {{-- ✅ Native select tetap ada (buat submit + required), tapi dropdown tampil custom --}}
+                  <select name="tahun" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Tahun</option>
                     @foreach($tahunOptions as $t)
                       <option value="{{ $t }}" {{ old('tahun') == $t ? 'selected' : '' }}>{{ $t }}</option>
                     @endforeach
                   </select>
+
+                  <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+                  <div class="tp-dd-menu" role="listbox" tabindex="-1"></div>
+
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
 
               <div class="tp-field">
                 <label class="tp-label">Unit Kerja</label>
-                <div class="tp-control">
+                <div class="tp-control tp-dd">
                   {{-- ✅ hanya 27 unit + 1 PPK --}}
-                  <select name="unit_id" class="tp-select" required>
+                  <select name="unit_id" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Pilih Unit Kerja</option>
 
                     {{-- ✅ PPK (fallback kalau belum ada row PPK di DB) --}}
@@ -226,6 +231,10 @@
                       @endforeach
                     @endif
                   </select>
+
+                  <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+                  <div class="tp-dd-menu" role="listbox" tabindex="-1"></div>
+
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
@@ -242,26 +251,34 @@
 
               <div class="tp-field">
                 <label class="tp-label">Jenis Pengadaan</label>
-                <div class="tp-control">
-                  <select name="jenis_pengadaan" class="tp-select" required>
+                <div class="tp-control tp-dd">
+                  <select name="jenis_pengadaan" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Pilih Jenis Pengadaan</option>
                     @foreach($jenisPengadaanOptions as $jp)
                       <option value="{{ $jp }}" {{ old('jenis_pengadaan') == $jp ? 'selected' : '' }}>{{ $jp }}</option>
                     @endforeach
                   </select>
+
+                  <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+                  <div class="tp-dd-menu" role="listbox" tabindex="-1"></div>
+
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
 
               <div class="tp-field tp-full">
                 <label class="tp-label">Status Pekerjaan</label>
-                <div class="tp-control">
-                  <select name="status_pekerjaan" class="tp-select" required>
+                <div class="tp-control tp-dd">
+                  <select name="status_pekerjaan" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Pilih Status Pekerjaan</option>
                     @foreach($statusPekerjaanOptions as $sp)
                       <option value="{{ $sp }}" {{ old('status_pekerjaan') == $sp ? 'selected' : '' }}>{{ $sp }}</option>
                     @endforeach
                   </select>
+
+                  <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+                  <div class="tp-dd-menu" role="listbox" tabindex="-1"></div>
+
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
               </div>
@@ -1558,10 +1575,8 @@
 <style>
   /* =========================================================
      ✅ PENTING: SEMUA CSS DI-SCOPE KE .page-ppk-tp
-     Biar tidak “ngerusak” UI halaman lain yang juga pakai Unit.css
      ========================================================= */
   :where(.page-ppk-tp){
-    /* jangan paksa font-size global; biarkan Unit.css yang atur */
     line-height: 1.6;
     font-weight: 400;
   }
@@ -1579,7 +1594,6 @@
   :where(.page-ppk-tp) .tp-badge,
   :where(.page-ppk-tp) .tp-label,
   :where(.page-ppk-tp) .tp-input,
-  :where(.page-ppk-tp) .tp-select,
   :where(.page-ppk-tp) .tp-actions .tp-btn,
   :where(.page-ppk-tp) .tp-help,
   :where(.page-ppk-tp) .tp-radio-card,
@@ -1605,7 +1619,7 @@
   }
 
   /* =============================
-     JUDUL A/B/C/D/E: BG DIHILANGIN
+     JUDUL A/B/C/D/E
   ============================= */
   :where(.page-ppk-tp) .tp-section-title{
     display:flex;
@@ -1618,18 +1632,6 @@
     font-size: 18px;
     width: 100%;
     box-sizing: border-box;
-  }
-  :where(.page-ppk-tp) .tp-badge{
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
-    display:grid;
-    place-items:center;
-    background: transparent;
-    border: 1px solid rgba(24,79,97,.25);
-    color: var(--navy2);
-    font-size: 15px;
-    flex: 0 0 auto;
   }
   :where(.page-ppk-tp) .tp-divider{
     height:1px;
@@ -1645,7 +1647,6 @@
   }
 
   :where(.page-ppk-tp) .tp-input,
-  :where(.page-ppk-tp) .tp-select,
   :where(.page-ppk-tp) .tp-textarea,
   :where(.page-ppk-tp) .tp-file{
     width:100%;
@@ -1658,27 +1659,49 @@
     background: #fff;
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
   }
+
+  /* =========================================================
+     ✅ DROPDOWN CUSTOM (SOLUSI BIAR WARNA SELECTED NGIKUT NAVY2)
+     - native select disembunyikan (tetap untuk submit + required)
+     - tampilannya pakai button + menu custom
+     ========================================================= */
   :where(.page-ppk-tp) .tp-control{ position:relative; }
-  :where(.page-ppk-tp) .tp-control .tp-select{ appearance:none; padding-right: 42px; }
 
-  /* =============================
-     DROPDOWN:
-     - value terpilih biru Unsoed
-     - placeholder saja yang abu
-  ============================= */
-  :where(.page-ppk-tp) .tp-select{
-    color: var(--navy2) !important;
-    background-color: #fff !important;
+  :where(.page-ppk-tp) .tp-select-native{
+    position:absolute !important;
+    left:-9999px !important;
+    width:1px !important;
+    height:1px !important;
+    opacity:0 !important;
+    pointer-events:none !important;
   }
-  :where(.page-ppk-tp) .tp-select:focus{ color: var(--navy2) !important; }
-  :where(.page-ppk-tp) .tp-select:invalid{ color:#94a3b8 !important; }
 
-  :where(.page-ppk-tp) .tp-select option:checked{
-    background: var(--navy2) !important;
-    color: #fff !important;
+  :where(.page-ppk-tp) .tp-dd-btn{
+    width:100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px 42px 12px 12px;
+    font-family: inherit;
+    font-size: 16px;
+    background:#fff;
+    text-align:left;
+    cursor:pointer;
+    color: var(--navy2);
+    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
   }
-  :where(.page-ppk-tp) .tp-select option:hover{
-    background: rgba(24,79,97,.12) !important;
+  :where(.page-ppk-tp) .tp-dd-btn.is-placeholder{ color:#94a3b8; }
+
+  :where(.page-ppk-tp) .tp-dd-btn:hover{
+    border-color: rgba(24,79,97,.62);
+    box-shadow: 0 8px 14px rgba(2,8,23,.05);
+    transform: translateY(-1px);
+  }
+  :where(.page-ppk-tp) .tp-dd.open .tp-dd-btn,
+  :where(.page-ppk-tp) .tp-dd-btn:focus{
+    border-color: var(--navy2);
+    box-shadow: 0 0 0 4px rgba(24,79,97,.14), 0 10px 18px rgba(2,8,23,.06);
+    transform: translateY(-1px);
+    outline:none;
   }
 
   :where(.page-ppk-tp) .tp-icon{
@@ -1692,26 +1715,52 @@
     transition: opacity .18s ease, transform .18s ease, color .18s ease;
     color: var(--navy2);
   }
-
-  :where(.page-ppk-tp) .tp-input:hover,
-  :where(.page-ppk-tp) .tp-select:hover{
-    border-color: rgba(24,79,97,.62);
-    box-shadow: 0 8px 14px rgba(2,8,23,.05);
-    transform: translateY(-1px);
-  }
-  :where(.page-ppk-tp) .tp-input:focus,
-  :where(.page-ppk-tp) .tp-select:focus,
-  :where(.page-ppk-tp) .tp-textarea:focus{
-    border-color: var(--navy2);
-    box-shadow: 0 0 0 4px rgba(24,79,97,.14), 0 10px 18px rgba(2,8,23,.06);
-    transform: translateY(-1px);
-  }
-  :where(.page-ppk-tp) .tp-control:focus-within .tp-icon{
+  :where(.page-ppk-tp) .tp-dd.open .tp-icon{
     opacity: .95;
-    color: var(--navy2);
     transform: translateY(-50%) rotate(-180deg);
   }
 
+  :where(.page-ppk-tp) .tp-dd-menu{
+    position:absolute;
+    left:0;
+    right:0;
+    top: calc(100% + 8px);
+    background:#fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    box-shadow: 0 18px 30px rgba(2,8,23,.12);
+    max-height: 360px;
+    overflow:auto;
+    padding: 8px;
+    z-index: 50;
+    display:none;
+  }
+  :where(.page-ppk-tp) .tp-dd.open .tp-dd-menu{ display:block; }
+
+  :where(.page-ppk-tp) .tp-dd-opt{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    width:100%;
+    border:0;
+    background:transparent;
+    padding: 10px 10px;
+    border-radius: 12px;
+    cursor:pointer;
+    font-family: inherit;
+    font-size: 15px;
+    color:#0f172a;
+    text-align:left;
+  }
+  :where(.page-ppk-tp) .tp-dd-opt:hover{
+    background: rgba(24,79,97,.10);
+  }
+  :where(.page-ppk-tp) .tp-dd-opt.is-selected{
+    background: var(--navy2);
+    color:#fff;
+  }
+
+  /* ACTIONS */
   :where(.page-ppk-tp) .tp-actions{
     display:flex;
     justify-content: space-between;
@@ -1788,7 +1837,7 @@
     background: var(--navy2);
   }
 
-  /* ACCORDION */
+  /* ACCORDION + (sisanya tetap sama seperti kode kamu) */
   :where(.page-ppk-tp) .tp-acc-item{
     border: 1px solid #e6eef2;
     border-radius: 14px;
@@ -1801,7 +1850,6 @@
     transform: translateY(-1px);
     box-shadow: 0 12px 20px rgba(2,8,23,.07);
   }
-
   :where(.page-ppk-tp) .tp-acc-head{
     width:100%;
     display:flex;
@@ -1817,8 +1865,6 @@
     font-size: 16px;
     transition: background .18s ease, color .18s ease;
   }
-
-  /* ✅ text tipis jumlah file (di header sesi) */
   :where(.page-ppk-tp) .tp-acc-count{
     font-size: 13px;
     opacity: .78;
@@ -1826,8 +1872,6 @@
     margin-right: 10px;
     color: currentColor;
   }
-
-  /* kalau sesi sudah ada file: header jadi hijau */
   :where(.page-ppk-tp) .tp-acc-item.has-file{
     border-color: rgba(34,197,94,.65);
     box-shadow: 0 14px 26px rgba(2,8,23,.08);
@@ -1838,7 +1882,6 @@
   }
   :where(.page-ppk-tp) .tp-acc-item.has-file .tp-acc-left i{ color:#fff; opacity:.95; }
   :where(.page-ppk-tp) .tp-acc-item.has-file .tp-acc-ic{ color:#fff; opacity:.95; }
-
   :where(.page-ppk-tp) .tp-acc-left{
     display:flex;
     align-items:center;
@@ -1846,7 +1889,6 @@
     min-width: 0;
   }
   :where(.page-ppk-tp) .tp-acc-left i{ font-size: 18px; }
-
   :where(.page-ppk-tp) .tp-acc-right{
     display:flex;
     align-items:center;
@@ -1858,16 +1900,13 @@
     transition: transform .16s ease;
     font-size: 18px;
   }
-
   :where(.page-ppk-tp) .tp-acc-body{
     border-top: 1px solid #eef3f6;
     background:#fff;
     padding: 14px;
   }
 
-  :where(.page-ppk-tp) .tp-upload-row{ margin-bottom: 16px; }
-
-  /* DROPZONE */
+  /* DROPZONE (tetap sama) */
   :where(.page-ppk-tp) .tp-dropzone{
     display:grid;
     place-items:center;
@@ -1886,7 +1925,6 @@
     box-shadow: 0 0 0 4px rgba(24,79,97,.12), 0 12px 20px rgba(2,8,23,.06);
     transform: translateY(-1px);
   }
-
   :where(.page-ppk-tp) .tp-acc-item.has-file .tp-dropzone{
     border-style: solid;
     border-color: rgba(34,197,94,.90);
@@ -1894,7 +1932,6 @@
     box-shadow: 0 0 0 4px rgba(34,197,94,.09), 0 12px 20px rgba(2,8,23,.05);
     transform: translateY(-1px);
   }
-
   :where(.page-ppk-tp) .tp-file-hidden{ display:none; }
   :where(.page-ppk-tp) .tp-drop-ic{
     width: 48px;
@@ -1925,7 +1962,7 @@
     box-shadow: 0 10px 16px rgba(2,8,23,.08);
   }
 
-  /* PREVIEW LIST */
+  /* PREVIEW LIST (tetap sama) */
   :where(.page-ppk-tp) .tp-preview-wrap{
     width: 100%;
     margin-top: 12px;
@@ -1985,8 +2022,6 @@
     color: #64748b;
     margin-top: 2px;
   }
-
-  /* ✅ X CENTER FIX */
   :where(.page-ppk-tp) .tp-preview-remove{
     width: 34px;
     height: 34px;
@@ -2039,9 +2074,7 @@
     color: #64748b;
   }
 
-  /* =============================
-     E. Dokumen Tidak Dipersyaratkan
-  ============================= */
+  /* E. Dokumen Tidak Dipersyaratkan (tetap sama dari kamu) */
   :where(.page-ppk-tp) .tp-nondoc-wrap{
     border: 1px solid #eef3f6;
     border-radius: 14px;
@@ -2192,7 +2225,102 @@
     if(input) input.checked = true;
   });
 
+  // ✅ Custom dropdown init (biar highlight selected jadi navy2, bukan biru bawaan browser)
+  const initCustomDropdowns = () => {
+    document.querySelectorAll('.tp-dd').forEach(dd => {
+      const sel = dd.querySelector('select.tp-select-native');
+      const btn = dd.querySelector('.tp-dd-btn');
+      const menu = dd.querySelector('.tp-dd-menu');
+      if(!sel || !btn || !menu) return;
+
+      const getPlaceholderText = () => {
+        const first = sel.querySelector('option[disabled][hidden]') || sel.querySelector('option[disabled]');
+        return first ? (first.textContent || '').trim() : 'Pilih';
+      };
+
+      const getSelectedText = () => {
+        const opt = sel.options[sel.selectedIndex];
+        return opt ? (opt.textContent || '').trim() : '';
+      };
+
+      const close = () => {
+        dd.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      };
+      const open = () => {
+        dd.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+        // scroll to selected
+        const cur = menu.querySelector('.tp-dd-opt.is-selected');
+        if(cur) cur.scrollIntoView({ block: 'nearest' });
+      };
+
+      const syncButton = () => {
+        const val = (sel.value || '').trim();
+        const isPlaceholder = (val === '');
+        btn.textContent = isPlaceholder ? getPlaceholderText() : getSelectedText();
+        btn.classList.toggle('is-placeholder', isPlaceholder);
+      };
+
+      const rebuildMenu = () => {
+        menu.innerHTML = '';
+        Array.from(sel.options).forEach((opt) => {
+          if(opt.disabled && opt.hidden) return; // skip placeholder
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'tp-dd-opt';
+          item.setAttribute('role', 'option');
+          item.dataset.value = opt.value;
+
+          item.textContent = (opt.textContent || '').trim();
+
+          const isSelected = (String(opt.value) === String(sel.value));
+          item.classList.toggle('is-selected', isSelected);
+          item.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+
+          item.addEventListener('click', () => {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            rebuildMenu();
+            syncButton();
+            close();
+          });
+
+          menu.appendChild(item);
+        });
+      };
+
+      // init
+      syncButton();
+      rebuildMenu();
+
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const isOpen = dd.classList.contains('open');
+        // tutup yg lain
+        document.querySelectorAll('.tp-dd.open').forEach(o => { if(o !== dd) o.classList.remove('open'); });
+        isOpen ? close() : open();
+      });
+
+      sel.addEventListener('change', () => {
+        syncButton();
+        rebuildMenu();
+      });
+
+      // close on outside click / ESC
+      document.addEventListener('click', (ev) => {
+        if(!dd.contains(ev.target)) close();
+      });
+      document.addEventListener('keydown', (ev) => {
+        if(ev.key === 'Escape') close();
+      });
+    });
+  };
+
   document.addEventListener('DOMContentLoaded', function(){
+    // init dropdown custom dulu
+    initCustomDropdowns();
+
     document.querySelectorAll('.tp-radio-wrap').forEach(wrap => {
       wrap.querySelectorAll('.tp-radio-card').forEach(c => c.classList.remove('active'));
       const checked = wrap.querySelector('input[type="radio"]:checked');
@@ -2249,6 +2377,7 @@
       if(input && btn){
         btn.addEventListener('click', (ev) => {
           ev.preventDefault();
+          input.value = ''; // ✅ PATCH: reset sebelum pilih ulang file (boleh pilih file yg sama)
           input.click();
         });
       }
@@ -2413,7 +2542,6 @@
           });
           rebuildInputFiles();
         }
-        fileInput.value = '';
         syncUI();
       });
 
