@@ -132,7 +132,7 @@
     </nav>
 
     <div class="dash-side-actions">
-      <a class="dash-side-btn" href="{{ route('home') }}">
+      <a class="dash-side-btn" href="{{ route('ppk.dashboard') }}">
         <i class="bi bi-house-door"></i>
         Kembali
       </a>

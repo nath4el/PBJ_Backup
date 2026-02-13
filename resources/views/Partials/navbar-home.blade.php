@@ -16,7 +16,7 @@
         } 
         : route('home')
 }}" 
-   class="nav-link {{ request()->routeIs(['home', 'ppk.dashboard', 'unit.dashboard']) ? 'active' : '' }}">
+   class="nav-link {{ request()->routeIs(['home', 'ppk.dashboard', 'unit.dashboard']) ? : '' }}">
     Dasbor
 </a>
 
