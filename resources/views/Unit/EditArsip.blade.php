@@ -226,7 +226,7 @@
     </nav>
 
     <div class="dash-side-actions">
-      <a class="dash-side-btn" href="{{ url('/unit/dashboard') }}">
+      <a class="dash-side-btn" href="{{ route('home') }}">
         <i class="bi bi-house-door"></i>
         Kembali
       </a>

@@ -43,7 +43,7 @@
   ========================= */
   --tp-gap-x: 18px;        /* jarak antar kolom */
   --tp-gap-y: 14px;        /* jarak antar row */
-  --tp-section-gap: 16px;  /* jarak antar card A/B/C/D */
+  --tp-section-gap: 16px;  /* jarak antar card A/B/C-D */
 }
 
 *{ box-sizing:border-box; }
@@ -537,37 +537,25 @@ table, th, td{ font-size: var(--fs-sm); }
   box-shadow: 0 10px 20px rgba(2,8,23,.05);
 }
 
-/* ====== GRID TABLE (UPDATE FINAL) ======
-   Urutan kolom:
-   1 checkbox
-   2 Tahun (CENTER)
-   3 Unit Kerja (LEFT)
-   4 Nama Pekerjaan (LEFT)
-   5 Metode PBJ (LEFT)
-   6 Nilai Kontrak (CENTER)
-   7 Status Arsip (CENTER)
-   8 Status Pekerjaan (CENTER)
-   9 Aksi (CENTER)
-*/
+/* ====== GRID TABLE (UPDATE FINAL) ====== */
 .ap-head,
 .ap-row{
   display:grid;
   grid-template-columns:
-    44px    /* checkbox: fixed biar rapih */
-    86px    /* tahun (sedikit dipersempit) */
-    1.20fr  /* unit */
-    2.25fr  /* pekerjaan (dipersempit biar kolom lain lega) */
-    1.05fr  /* metode (sedikit dipersempit karena pill dibuat fit) */
-    1.55fr  /* nilai kontrak (dilebarin biar gak nabrak) */
-    1.05fr  /* status arsip */
-    1.10fr  /* status pekerjaan */
-    90px;   /* aksi */
-  column-gap: 18px; /* ✅ jarak antar kolom dibuat konsisten & gak mepet */
+    44px
+    86px
+    1.20fr
+    2.25fr
+    1.05fr
+    1.55fr
+    1.05fr
+    1.10fr
+    90px;
+  column-gap: 18px;
   align-items:center;
   padding: 12px 18px;
 }
 
-/* table head normal (bukan bold) */
 .ap-head{
   background: var(--navy2);
   color:#fff;
@@ -575,7 +563,6 @@ table, th, td{ font-size: var(--fs-sm); }
   font-size: 13px;
 }
 
-/* ✅ garis antar row sedikit lebih tebal */
 .ap-row{
   border-top: 2px solid #e9eff4;
   font-weight: var(--fw-normal);
@@ -583,14 +570,12 @@ table, th, td{ font-size: var(--fs-sm); }
   background:#fff;
 }
 
-/* ===== Alignment kunci biar header = isi ===== */
 .ap-head > div,
 .ap-row > div{
-  min-width: 0;           /* biar grid ga “dorong” kolom lain */
+  min-width: 0;
   align-self: center;
 }
 
-/* 1) checkbox */
 .ap-head > div:nth-child(1),
 .ap-row  > div:nth-child(1){
   display:flex;
@@ -598,7 +583,6 @@ table, th, td{ font-size: var(--fs-sm); }
   justify-content:center;
 }
 
-/* 2) Tahun center */
 .ap-head > div:nth-child(2),
 .ap-row  > div:nth-child(2){
   text-align:center;
@@ -606,7 +590,6 @@ table, th, td{ font-size: var(--fs-sm); }
   margin-left: -70px;
 }
 
-/* 3) Unit left */
 .ap-head > div:nth-child(3),
 .ap-row  > div:nth-child(3){
   text-align:left;
@@ -614,54 +597,46 @@ table, th, td{ font-size: var(--fs-sm); }
   margin-left: -50px;
 }
 
-/* 4) Pekerjaan left */
 .ap-head > div:nth-child(4),
 .ap-row  > div:nth-child(4){
   text-align:left;
   justify-self:start;
-   margin-left: -15px;
+  margin-left: -15px;
 }
 
-/* 5) Metode left */
 .ap-head > div:nth-child(5),
 .ap-row  > div:nth-child(5){
   text-align:left;
   justify-self:start;
 }
 
-/* 6) Nilai Kontrak center */
 .ap-head > div:nth-child(6),
 .ap-row  > div:nth-child(6){
   text-align:center;
   justify-self:center;
 }
 
-/* 7) Status Arsip center */
 .ap-head > div:nth-child(7),
 .ap-row  > div:nth-child(7){
   text-align:center;
   justify-self:center;
 }
 
-/* 8) Status Pekerjaan center */
 .ap-head > div:nth-child(8),
 .ap-row  > div:nth-child(8){
   text-align:center;
   justify-self:center;
 }
 
-/* 9) Aksi center */
 .ap-head > div:nth-child(9),
 .ap-row  > div:nth-child(9){
   text-align:center;
   justify-self:center;
 }
 
-/* checkbox */
 .ap-check{ display:flex; align-items:center; }
 .ap-check input{ width: 14px; height: 14px; accent-color: var(--navy2); }
 
-/* highlight normal */
 .ap-year,
 .ap-unit,
 .ap-job{
@@ -670,36 +645,33 @@ table, th, td{ font-size: var(--fs-sm); }
 }
 .ap-job{
   line-height: 1.35;
-  overflow-wrap: anywhere;   /* biar wrap enak & ga “nabrak” */
+  overflow-wrap: anywhere;
 }
 
-/* ====== ✅ PILL: dibuat “fit” dan seminim mungkin ====== */
 .ap-pill{
   display:inline-flex;
   align-items:center;
-  justify-content:flex-start;     /* biar mepet ke teks */
-  width: fit-content;            /* ✅ fit content */
+  justify-content:flex-start;
+  width: fit-content;
   max-width: 100%;
-  padding: 6px 8px;              /* ✅ lebih kecil */
+  padding: 6px 8px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: var(--fw-normal);
   line-height: 1.2;
-  white-space: normal;           /* ✅ boleh turun baris */
+  white-space: normal;
   text-align: left;
   gap: 0;
 }
 
-/* khusus kolom Metode: batasi lebar pill biar gak nabrak Nilai Kontrak */
 .ap-row > div:nth-child(5) .ap-pill{
-  max-width: 112px;              /* ✅ paksa jadi “fit” dan gak terlalu lebar */
+  max-width: 112px;
   overflow-wrap: anywhere;
 }
 
 .ap-pill-blue{ background:#cfe2ff; color:#1e4f7a; }
 .ap-pill-yellow{ background:#fff3b0; color:#1e4f7a; }
 
-/* Nilai Kontrak: biru unsoed, center, ga pecah */
 .ap-money{
   display:inline-block;
   color: var(--unsoed-blue);
@@ -717,14 +689,12 @@ table, th, td{ font-size: var(--fs-sm); }
 }
 .ap-eye i{ font-size: 14px; opacity: .95; }
 
-/* status arsip center rapih */
 .ap-arsip-center{
   display:flex;
   justify-content:center;
   align-items:center;
 }
 
-/* aksi */
 .ap-aksi{
   display:flex;
   justify-content:center;
@@ -778,9 +748,7 @@ table, th, td{ font-size: var(--fs-sm); }
   margin: 0 0 10px;
 }
 
-.tp-card-title{
-  color: var(--unsoed-blue);
-}
+.tp-card-title{ color: var(--unsoed-blue); }
 
 .tp-badge{
   width: 26px;
@@ -1332,7 +1300,6 @@ body.modal-open .dash-wrap{
   .dash-sidebar{ display:none; }
   .dash-main{ padding: 18px; }
 
-  /* tabel jadi stacked */
   .ap-head,
   .ap-row{
     grid-template-columns: 1fr;
@@ -1352,7 +1319,6 @@ body.modal-open .dash-wrap{
 
 /* =========================================================
    FORCE PATCH (PALING BAWAH Unit.css)
-   (tetap, tidak diubah fungsinya)
 ========================================================= */
 section.tp-cardbox{
   background:#fff !important;
@@ -1421,7 +1387,6 @@ section.tp-cardbox .tp-help{
 
 /* =========================================================
    ✅ NEW PATCH (Warna Biru Unsoed untuk Tambah Pengadaan & Edit Arsip)
-   (tetap)
 ========================================================= */
 .tp-form .tp-section-title,
 .tp-form .tp-card-title{
@@ -1437,17 +1402,14 @@ section.tp-cardbox .tp-help{
   color: var(--unsoed-blue) !important;
 }
 
-/* label/judul input tetap abu-abu */
 .tp-form .tp-label{
   color: var(--muted) !important;
 }
 
-/* D: judul input dokumen */
 .tp-form .tp-upload-label{
   color: var(--unsoed-blue) !important;
 }
 
-/* Paksa biru Unsoed untuk judul catatan dokumen */
 .dt-doc-note-note .dt-doc-note-title,
 #dtDocNoteWrap .dt-doc-note-title,
 body .dt-doc-note-title{
@@ -1456,6 +1418,128 @@ body .dt-doc-note-title{
 
 #dtDocNoteWrap .dt-doc-note-title,
 #dtDocNoteWrap .bi-info-circle {
-    color: #1F5C63 !important;
+  color: #1F5C63 !important;
 }
 
+/* =========================
+   ✅ FIX FINAL: Unit/Dashboard bisa scroll NORMAL,
+   sidebar tetap STICKY mengikuti scroll halaman
+   (ganti patch overflow sebelumnya)
+========================= */
+
+/* kembalikan scroll ke body */
+html, body{
+  height: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* jangan kunci wrapper, biar sticky bekerja */
+.dash-wrap{
+  min-height: 100vh;
+  overflow: visible;
+}
+
+/* sidebar tetap nempel */
+.dash-sidebar{
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* main ikut scroll halaman (bukan scroll container sendiri) */
+.dash-main{
+  height: auto;
+  overflow: visible;
+}
+/* =========================================================
+   ✅ FINAL GLOBAL FIX (UNTUK SEMUA HALAMAN UNIT)
+   - Sidebar (navbar) SELALU sticky
+   - Yang scroll hanya konten kanan (.dash-main)
+   - Mengalahkan inline/page override dengan !important
+========================================================= */
+
+/* 1) Jangan kunci scroll di html/body */
+html, body{
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* 2) Wrapper harus ngunci viewport (biar scroll pindah ke main) */
+.dash-wrap{
+  display: flex !important;
+  min-height: 100vh !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+}
+
+/* 3) Sidebar selalu sticky */
+.dash-sidebar{
+  position: sticky !important;
+  top: 0 !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+  align-self: flex-start !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* 4) MAIN jadi area scroll */
+.dash-main{
+  flex: 1 !important;
+  height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* 5) Kalau ada modal yang pakai blur, pastikan tidak mematikan sticky */
+body.modal-open .dash-wrap{
+  overflow: hidden !important;
+}
+/* =========================================================
+   ✅ FINAL GLOBAL FIX (UNTUK SEMUA HALAMAN UNIT)
+   - Sidebar selalu sticky/nempel
+   - Yang scroll hanya konten kanan (.dash-main)
+   - Mengalahkan inline style Unit/Dashboard dengan !important
+========================================================= */
+
+/* kunci scroll window */
+html, body{
+  height: 100% !important;
+  overflow: hidden !important;
+  overflow-x: hidden !important;
+}
+
+/* wrapper penuh viewport */
+.dash-wrap{
+  display: flex !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  overflow: hidden !important;
+}
+
+/* sidebar nempel */
+.dash-sidebar{
+  position: sticky !important;
+  top: 0 !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+  align-self: flex-start !important;
+  flex: 0 0 260px !important;
+}
+
+/* konten kanan yang scroll */
+.dash-main{
+  flex: 1 !important;
+  height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* modal */
+body.modal-open .dash-wrap{
+  overflow: hidden !important;
+}

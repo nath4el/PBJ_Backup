@@ -260,11 +260,44 @@
 </div>
 
 <style>
-  /* ====== (CSS kamu: TIDAK DIUBAH) ====== */
+ /* =========================
+     ✅ FIX FINAL SCROLL (Unit/Dashboard)
+     - Samakan dengan global Unit.css:
+       scroll hanya di .dash-main
+       sidebar selalu nempel
+  ========================= */
+  html, body{
+    height: 100% !important;
+    overflow: hidden !important;
+    overflow-x: hidden !important;
+  }
+
+  .dash-wrap{
+    height: 100vh !important;
+    min-height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .dash-main{
+    height: 100vh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .dash-sidebar{
+    position: sticky !important;
+    top: 0 !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ====== (CSS kamu: TIDAK DIUBAH selain 3 baris pengunci di atas) ====== */
   .dash-body{ font-size: 18px; line-height: 1.6; font-weight: 400; }
-  html, body{ height: 100%; overflow: hidden; }
-  .dash-wrap{ height: 100vh; overflow: hidden; }
-  .dash-main{ height: 100vh; overflow: hidden; }
+
+  
+
   .dash-header h1{ font-weight: 600 !important; }
   .dash-header p{ font-weight: 400 !important; }
   .u-label, .u-value, .u-money, .u-sub, .u-chart-title, .u-select select{ font-weight: 400 !important; }
@@ -280,10 +313,7 @@
     position: absolute; right: 10px; top: 50%;
     transform: translateY(-50%); opacity: .6; pointer-events: none; font-size: 12px;
   }
-  .dash-sidebar{
-    position: sticky; top: 0; height: 100vh; overflow: hidden;
-    display:flex; flex-direction:column;
-  }
+
   .u-sum{ display:grid; gap: 16px; }
   .u-sum-row{ display:grid; gap: 16px; }
   .u-sum-row--3{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -402,6 +432,7 @@
     .u-canvas-wrap canvas{ max-height: 220px !important; }
   }
 </style>
+
 
 <script>
   document.addEventListener('DOMContentLoaded', function(){

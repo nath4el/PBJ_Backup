@@ -147,6 +147,7 @@
             <div class="u-ic"><i class="bi {{ $summary[3]['icon'] }}"></i></div>
           </div>
 
+          {{-- ✅ HANYA FILTER TAHUN (unit dihilangkan) --}}
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunPaket">
@@ -172,6 +173,7 @@
             <div class="u-ic u-ic--yellow"><i class="bi {{ $summary[4]['icon'] }}"></i></div>
           </div>
 
+          {{-- ✅ HANYA FILTER TAHUN (unit dihilangkan) --}}
           <div class="u-card-filter">
             <div class="u-mini-select">
               <select id="fTahunNilai">
@@ -326,12 +328,14 @@
 <style>
   /* =============================
      DASHBOARD OVERRIDE (NO BOLD)
+     ✅ FIX: HILANGKAN "LOCK" OVERFLOW (BIAR PAGE BISA SCROLL NORMAL)
   ============================= */
   .dash-body{ font-size:18px; line-height:1.6; font-weight:400; }
 
-  html, body{ height:100%; overflow:hidden; }
-  .dash-wrap{ height:100vh; overflow:hidden; }
-  .dash-main{ height:100vh; overflow:hidden; }
+  /* ❌ DIHAPUS: html, body, .dash-wrap, .dash-main yang mengunci overflow:hidden */
+  /* html, body{ height:100%; overflow:hidden; }
+     .dash-wrap{ height:100vh; overflow:hidden; }
+     .dash-main{ height:100vh; overflow:hidden; } */
 
   body.is-modal-open{ overflow:hidden !important; }
 
@@ -1044,7 +1048,7 @@
       if(!donutChart) return;
 
       const tahun = (fTahun1?.value || '');
-      const unit_id = (fUnit1?.value || ''); // ✅ ini integer id
+      const unit_id = (fUnit1?.value || '');
 
       try{
         const stats = await fetchStats({ tahun, unit_id });
@@ -1052,16 +1056,14 @@
         donutChart.data.datasets[0].data = stats.status?.values || donutChart.data.datasets[0].data;
         donutChart.update();
         refreshDonutDetail();
-      }catch(e){
-        // silent
-      }
+      }catch(e){}
     };
 
     const applyBarFilter = async () => {
       if(!barChart) return;
 
       const tahun = (fTahun2?.value || '');
-      const unit_id = (fUnit2?.value || ''); // ✅ ini integer id
+      const unit_id = (fUnit2?.value || '');
 
       try{
         const stats = await fetchStats({ tahun, unit_id });
@@ -1070,9 +1072,7 @@
         barChart.data.datasets[0].label = tahun ? String(tahun) : 'Semua';
         barChart.update();
         refreshBarDetail();
-      }catch(e){
-        // silent
-      }
+      }catch(e){}
     };
 
     if(fTahun1) fTahun1.addEventListener('change', applyDonutFilter);
@@ -1081,10 +1081,11 @@
     if(fUnit2)  fUnit2.addEventListener('change', applyBarFilter);
 
     // =========================
-    // KARTU PAKET + NILAI (REAL FETCH by year)
+    // KARTU PAKET + NILAI (HANYA FILTER TAHUN)
     // =========================
-    const fPaket  = document.getElementById('fTahunPaket');
-    const fNilai  = document.getElementById('fTahunNilai');
+    const fPaketTahun  = document.getElementById('fTahunPaket');
+    const fNilaiTahun  = document.getElementById('fTahunNilai');
+
     const elPaket = document.getElementById('valPaket');
     const elNilai = document.getElementById('valNilai');
 
@@ -1099,10 +1100,11 @@
       return true;
     };
 
-    const applyPaketByYear = async () => {
-      const tahun = (fPaket?.value || '');
+    const applyPaketFilter = async () => {
+      const tahun = (fPaketTahun?.value || '');
       if(!elPaket) return;
 
+      // default = semua tahun
       if(tahun === ''){
         if(setIfDifferent(elPaket, basePaket)){
           CountFX.rerunTo(elPaket, basePaket);
@@ -1119,10 +1121,11 @@
       }catch(e){}
     };
 
-    const applyNilaiByYear = async () => {
-      const tahun = (fNilai?.value || '');
+    const applyNilaiFilter = async () => {
+      const tahun = (fNilaiTahun?.value || '');
       if(!elNilai) return;
 
+      // default = semua tahun
       if(tahun === ''){
         if(setIfDifferent(elNilai, baseNilai)){
           CountFX.rerunTo(elNilai, baseNilai);
@@ -1139,11 +1142,11 @@
       }catch(e){}
     };
 
-    if(fPaket) fPaket.addEventListener('change', applyPaketByYear);
-    if(fNilai) fNilai.addEventListener('change', applyNilaiByYear);
+    if(fPaketTahun) fPaketTahun.addEventListener('change', applyPaketFilter);
+    if(fNilaiTahun) fNilaiTahun.addEventListener('change', applyNilaiFilter);
 
-    if(fPaket) fPaket.value = '';
-    if(fNilai) fNilai.value = '';
+    if(fPaketTahun) fPaketTahun.value = '';
+    if(fNilaiTahun) fNilaiTahun.value = '';
 
     // refresh detail jika popover dibuka
     const popDonut = document.getElementById('popDonut');

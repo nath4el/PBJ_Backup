@@ -39,17 +39,8 @@ class PpkController extends Controller
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
             : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
 
-        $usedUnitIds = Pengadaan::whereNotNull('unit_id')
-            ->distinct()
-            ->orderBy('unit_id')
-            ->pluck('unit_id')
-            ->map(fn($x) => (int)$x)
-            ->values()
-            ->all();
-
-        $units = count($usedUnitIds)
-            ? Unit::whereIn('id', $usedUnitIds)->orderBy($unitNameCol, 'asc')->get(['id', $unitNameCol])
-            : collect();
+        // ✅ Samakan isi dropdown Unit dengan page PPK/ArsipPBJ (ambil dari tabel units)
+        $units = Unit::orderBy($unitNameCol, 'asc')->get(['id', $unitNameCol]);
 
         $registeredUnits = $units->pluck($unitNameCol)->values()->all();
 
@@ -66,15 +57,16 @@ class PpkController extends Controller
         $publik     = Pengadaan::where('status_arsip', 'Publik')->count();
         $privat     = Pengadaan::where('status_arsip', 'Privat')->count();
 
-        $paketYear = Pengadaan::where('tahun', $defaultYear)->count();
-        $nilaiYear = (int) Pengadaan::where('tahun', $defaultYear)->sum('nilai_kontrak');
+        // ✅ Default kartu mengikuti "Semua Tahun" + "Semua Unit" (konek ke ArsipPBJ)
+        $paketAll = Pengadaan::count();
+        $nilaiAll = (int) Pengadaan::sum('nilai_kontrak');
 
         $summary = [
             ["label" => "Total Arsip", "value" => $totalArsip, "accent" => "navy", "icon" => "bi-file-earmark-text"],
             ["label" => "Arsip Publik", "value" => $publik, "accent" => "yellow", "icon" => "bi-eye"],
             ["label" => "Arsip Private", "value" => $privat, "accent" => "gray", "icon" => "bi-eye-slash"],
-            ["label" => "Total Arsip Pengadaan", "value" => $paketYear, "accent" => "navy", "icon" => "bi-file-earmark-text", "sub" => "Paket Pengadaan Barang dan Jasa"],
-            ["label" => "Total Nilai Pengadaan", "value" => $this->formatRupiahNumber($nilaiYear), "accent" => "yellow", "icon" => "bi-buildings", "sub" => "Nilai Kontrak Pengadaan"],
+            ["label" => "Total Arsip Pengadaan", "value" => $paketAll, "accent" => "navy", "icon" => "bi-file-earmark-text", "sub" => "Paket Pengadaan Barang dan Jasa"],
+            ["label" => "Total Nilai Pengadaan", "value" => $this->formatRupiahNumber($nilaiAll), "accent" => "yellow", "icon" => "bi-buildings", "sub" => "Nilai Kontrak Pengadaan"],
         ];
 
         $statusLabels = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
@@ -171,28 +163,42 @@ class PpkController extends Controller
 
     private function countByMetodePengadaanPPK(?int $unitId, ?int $tahun, array $labels): array
     {
+        // ✅ Normalisasi supaya konek konsisten dengan nilai "jenis_pengadaan" di detail Arsip
         $map = [
-            "Pengadaan\nLangsung"          => ["Pengadaan Langsung", "Pengadaan\nLangsung"],
-            "Penunjukan\nLangsung"        => ["Penunjukan Langsung", "Penunjukan\nLangsung"],
-            "E-Purchasing /\nE-Catalog"   => ["E-Purchasing / E-Catalog", "E-Purchasing/E-Catalog", "E-Purchasing", "E-Catalog", "E-Catalogue"],
-            "Tender\nTerbatas"            => ["Tender Terbatas", "Tender\nTerbatas"],
-            "Tender\nTerbuka"             => ["Tender Terbuka", "Tender\nTerbuka", "Tender"],
-            "Swakelola"                   => ["Swakelola"],
+            "Pengadaan\nLangsung"        => ["pengadaan langsung"],
+            "Penunjukan\nLangsung"       => ["penunjukan langsung"],
+            "E-Purchasing /\nE-Catalog"  => [
+                "e-purchasing / e-catalog",
+                "e-purchasing/e-catalog",
+                "e-purchasing",
+                "e-catalog",
+                "e-catalogue",
+                "ecatalog",
+                "e catalog",
+            ],
+            "Tender\nTerbatas"           => ["tender terbatas"],
+            "Tender\nTerbuka"            => ["tender terbuka", "tender"],
+            "Swakelola"                  => ["swakelola"],
         ];
 
         $raw = Pengadaan::query()
             ->when($unitId !== null, fn($q) => $q->where('unit_id', $unitId))
             ->when($tahun !== null, fn($q) => $q->where('tahun', $tahun))
-            ->select('jenis_pengadaan', DB::raw('COUNT(*) as cnt'))
-            ->groupBy('jenis_pengadaan')
-            ->pluck('cnt', 'jenis_pengadaan')
+            ->whereNotNull('jenis_pengadaan')
+            ->whereRaw("TRIM(jenis_pengadaan) <> ''")
+            ->selectRaw("LOWER(TRIM(jenis_pengadaan)) as jp, COUNT(*) as cnt")
+            ->groupBy('jp')
+            ->pluck('cnt', 'jp')
             ->toArray();
 
         $out = [];
         foreach ($labels as $lbl) {
-            $alts = $map[$lbl] ?? [$lbl];
+            $alts = $map[$lbl] ?? [mb_strtolower(trim($lbl), 'UTF-8')];
             $sum = 0;
-            foreach ($alts as $k) $sum += (int)($raw[$k] ?? 0);
+            foreach ($alts as $k) {
+                $k = mb_strtolower(trim($k), 'UTF-8');
+                $sum += (int)($raw[$k] ?? 0);
+            }
             $out[] = $sum;
         }
         return $out;
