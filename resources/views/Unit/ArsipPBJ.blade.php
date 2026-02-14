@@ -33,6 +33,11 @@
     throw new \RuntimeException('Variable $arsips (paginator) tidak dikirim dari controller. Pastikan UnitController@arsipIndex mengirim compact("arsips").');
   }
 
+  // ✅ ambil query filter (server-side)
+  $selectedStatus = request()->query('status', 'Semua');
+  $selectedYear   = request()->query('tahun', 'Semua');
+  $selectedQ      = request()->query('q', '');
+
   // Bentuk rows sesuai struktur yang dipakai UI
   $rows = collect($arsips->items())->map(function($item) use ($unitName){
     $r = is_array($item) ? $item : (array) $item;
@@ -76,9 +81,14 @@
     ];
   })->values()->all();
 
-  // Options filter
-  $years = array_values(array_unique(array_map(fn($x) => $x['tahun'], $rows)));
-  rsort($years);
+  // ✅ Options filter Tahun harus dari controller (agar semua page sama)
+  $years = [];
+  if (isset($tahunOptions) && is_array($tahunOptions) && count($tahunOptions)) {
+    $years = $tahunOptions;
+  } else {
+    $years = array_values(array_unique(array_map(fn($x) => $x['tahun'], $rows)));
+    rsort($years);
+  }
 
   $unitOptions = array_values(array_unique(array_map(fn($x) => $x['unit'], $rows)));
   sort($unitOptions);
@@ -88,6 +98,9 @@
 
   // ✅ Endpoint delete arsip (bulk)
   $bulkDeleteUrl = url('/unit/arsip'); // DELETE /unit/arsip  => unit.arsip.bulkDestroy
+
+  // ✅ query string untuk pagination (biar page 2 ikut filter)
+  $qs = request()->except('page');
 @endphp
 
 <div class="dash-wrap">
@@ -165,7 +178,7 @@
       <div class="ap-filter-row">
         <div class="ap-search">
           <i class="bi bi-search"></i>
-          <input id="apSearchInput" type="text" placeholder="Cari..." />
+          <input id="apSearchInput" type="text" placeholder="Cari..." value="{{ $selectedQ }}" />
         </div>
 
         {{-- ✅ UNIT ROLE: filter unit disembunyikan & otomatis terkunci ke unit yang benar (sesuai data-unit di tabel) --}}
@@ -178,18 +191,18 @@
 
         <div class="ap-select">
           <select id="apStatusFilter">
-            <option value="Semua">Semua Status</option>
-            <option value="Publik">Publik</option>
-            <option value="Privat">Privat</option>
+            <option value="Semua"  {{ $selectedStatus === 'Semua' ? 'selected' : '' }}>Semua Status</option>
+            <option value="Publik" {{ $selectedStatus === 'Publik' ? 'selected' : '' }}>Publik</option>
+            <option value="Privat" {{ $selectedStatus === 'Privat' ? 'selected' : '' }}>Privat</option>
           </select>
           <i class="bi bi-chevron-down"></i>
         </div>
 
         <div class="ap-select">
           <select id="apYearFilter">
-            <option value="Semua">Semua Tahun</option>
+            <option value="Semua" {{ (string)$selectedYear === 'Semua' ? 'selected' : '' }}>Semua Tahun</option>
             @foreach($years as $y)
-              <option value="{{ $y }}">{{ $y }}</option>
+              <option value="{{ $y }}" {{ (string)$selectedYear === (string)$y ? 'selected' : '' }}>{{ $y }}</option>
             @endforeach
           </select>
           <i class="bi bi-chevron-down"></i>
@@ -326,7 +339,7 @@
 
         <div class="ap-pagination">
           <a class="ap-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
-            href="{{ $arsips->onFirstPage() ? '#' : $arsips->previousPageUrl() }}"
+            href="{{ $arsips->onFirstPage() ? '#' : $arsips->appends($qs)->previousPageUrl() }}"
             aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}">
             <i class="bi bi-chevron-left"></i>
           </a>
@@ -339,7 +352,7 @@
           @endphp
 
           @if($start > 1)
-            <a class="ap-page-btn" href="{{ $arsips->url(1) }}">1</a>
+            <a class="ap-page-btn" href="{{ $arsips->appends($qs)->url(1) }}">1</a>
             @if($start > 2)
               <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
             @endif
@@ -347,7 +360,7 @@
 
           @for($i = $start; $i <= $end; $i++)
             <a class="ap-page-btn {{ $i === $current ? 'is-active' : '' }}"
-              href="{{ $arsips->url($i) }}">
+              href="{{ $arsips->appends($qs)->url($i) }}">
               {{ $i }}
             </a>
           @endfor
@@ -356,11 +369,11 @@
             @if($end < $last - 1)
               <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
             @endif
-            <a class="ap-page-btn" href="{{ $arsips->url($last) }}">{{ $last }}</a>
+            <a class="ap-page-btn" href="{{ $arsips->appends($qs)->url($last) }}">{{ $last }}</a>
           @endif
 
           <a class="ap-page-btn {{ $arsips->hasMorePages() ? '' : 'is-disabled' }}"
-            href="{{ $arsips->hasMorePages() ? $arsips->nextPageUrl() : '#' }}"
+            href="{{ $arsips->hasMorePages() ? $arsips->appends($qs)->nextPageUrl() : '#' }}"
             aria-disabled="{{ $arsips->hasMorePages() ? 'false' : 'true' }}">
             <i class="bi bi-chevron-right"></i>
           </a>
@@ -695,38 +708,70 @@ document.addEventListener('DOMContentLoaded', function () {
     setBtnDisabled(deleteBtn, ids.length === 0);
   }
 
-  function applyFilters(){
-    const unitVal   = unitEl ? unitEl.value : lockedUnitName;
+  // =========================
+  // ✅ AUTO REFRESH (SERVER-SIDE FILTER) - sama konsep PPK
+  // - setiap ganti filter/search => update query string, reset page=1
+  // =========================
+  function buildUrlWithFilters(){
     const statusVal = filterEl ? filterEl.value : 'Semua';
     const yearVal   = yearEl ? yearEl.value : 'Semua';
-    const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    const qVal      = (searchEl ? searchEl.value : '').trim();
 
-    getRows().forEach(row => {
-      const u = row.getAttribute('data-unit');
-      const s = row.getAttribute('data-status');
-      const y = row.getAttribute('data-year');
-      const hay = (row.getAttribute('data-search') || '').toLowerCase();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('page'); // reset page
 
-      const unitOk   = (unitVal === 'Semua')   || (u === unitVal);
-      const statusOk = (statusVal === 'Semua') || (s === statusVal);
-      const yearOk   = (yearVal === 'Semua')   || (y === yearVal);
-      const searchOk = (q === '') || hay.includes(q);
+    if(statusVal && statusVal !== 'Semua') url.searchParams.set('status', statusVal);
+    else url.searchParams.delete('status');
 
-      row.style.display = (unitOk && statusOk && yearOk && searchOk) ? '' : 'none';
-    });
+    if(yearVal && yearVal !== 'Semua') url.searchParams.set('tahun', yearVal);
+    else url.searchParams.delete('tahun');
 
-    syncSelectAllState();
-    updateEditState();
-    updateDeleteState();
+    if(qVal !== '') url.searchParams.set('q', qVal);
+    else url.searchParams.delete('q');
+
+    return url.toString();
   }
 
-  if (unitEl)  unitEl.addEventListener('change', applyFilters);
-  if (filterEl) filterEl.addEventListener('change', applyFilters);
-  if (yearEl)   yearEl.addEventListener('change', applyFilters);
-  if (searchEl) searchEl.addEventListener('input', applyFilters);
+  let navTimer = null;
+  function scheduleNavigate(delay = 1500){
+    clearTimeout(navTimer);
+    navTimer = setTimeout(() => {
+      const nextUrl = buildUrlWithFilters();
+      if(nextUrl !== window.location.href){
+        window.location.href = nextUrl;
+      }
+    }, delay);
+  }
+
+  // dropdown cepat
+  if (filterEl) filterEl.addEventListener('change', () => scheduleNavigate(150));
+  if (yearEl)   yearEl.addEventListener('change', () => scheduleNavigate(150));
+
+  // search lebih lambat + Enter langsung
+  if (searchEl){
+    searchEl.addEventListener('input', () => scheduleNavigate(700));
+
+    searchEl.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        e.stopPropagation();
+        scheduleNavigate(0);
+        return false;
+      }
+    });
+
+    if (searchEl.form){
+      searchEl.form.addEventListener('submit', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      });
+    }
+  }
 
   if(refreshBtn){
     refreshBtn.addEventListener('click', function(){
+      // refresh dengan query sekarang (tetap terfilter)
       window.location.reload();
     });
   }
@@ -762,7 +807,6 @@ document.addEventListener('DOMContentLoaded', function () {
       const ok = confirm(`Hapus ${ids.length} arsip terpilih?`);
       if(!ok) return;
 
-      // UI lock
       setBtnDisabled(deleteBtn, true);
 
       try{
@@ -785,7 +829,6 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
 
-        // sukses: remove rows dari table
         ids.forEach(id => {
           const cb = document.querySelector(`.ap-row-check[value="${id}"]`);
           const row = cb ? cb.closest('.ap-row') : null;
@@ -797,13 +840,15 @@ document.addEventListener('DOMContentLoaded', function () {
           selectAll.indeterminate = false;
         }
 
-        applyFilters();
+        syncSelectAllState();
+        updateEditState();
+        updateDeleteState();
+
         alert(data?.message || 'Arsip terpilih berhasil dihapus.');
 
       }catch(err){
         alert('Terjadi error saat menghapus arsip.');
       }finally{
-        // re-evaluate state
         updateDeleteState();
       }
     });
@@ -828,7 +873,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  applyFilters();
   syncSelectAllState();
   updateEditState();
   updateDeleteState();
@@ -846,7 +890,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // SORT NILAI KONTRAK
+  // SORT NILAI KONTRAK (tetap sama, client-side di page ini)
   const btn   = document.getElementById('sortNilaiBtn');
   const icon  = document.getElementById('sortNilaiIcon');
   const table = document.querySelector('.ap-table');
@@ -927,7 +971,6 @@ document.addEventListener('DOMContentLoaded', function () {
     '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'
   }[c]));
 
-  // ✅ helper URL untuk file dari storage
   const normalizeStorageUrl = (p) => {
     if(!p) return '#';
     if(String(p).startsWith('http')) return String(p);
@@ -935,13 +978,11 @@ document.addEventListener('DOMContentLoaded', function () {
     return '/storage/' + String(p).replace(/^\/+/, '');
   };
 
-  // ✅ PREVIEW fallback (jika raw berupa path string, tanpa url showDokumen)
   const toPreviewUrl = (storageUrl) => {
     const u = normalizeStorageUrl(storageUrl);
     return `/file-viewer?file=${encodeURIComponent(u)}`;
   };
 
-  // ✅ DOWNLOAD (jika ingin)
   const toDownloadUrl = (storageUrl) => normalizeStorageUrl(storageUrl);
 
   const renderDocs = (raw) => {
@@ -963,7 +1004,6 @@ document.addEventListener('DOMContentLoaded', function () {
       const items = Array.isArray(group.items) ? group.items : [];
       items.forEach(item => {
 
-        // ====== CASE: item string path/url ======
         if(typeof item === 'string'){
           const name = item.split('/').filter(Boolean).pop() || item;
           const fileUrl = normalizeStorageUrl(item);
@@ -995,21 +1035,12 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
 
-        // ====== CASE: item object {url, name, path, label} dari controller ======
         const url  = item?.url || '';
         const name = item?.name || (item?.path ? String(item.path).split('/').pop() : 'Dokumen');
         const label = item?.label || group.field;
         const path  = item?.path || '';
 
-        /**
-         * ✅ INI FIX UTAMANYA:
-         * - PREVIEW pakai item.url langsung (route unit.arsip.dokumen.show)
-         *   agar showDokumen() yang redirect ke file-viewer,
-         *   jadi TIDAK ADA double-wrap /file-viewer?file=http://.../unit/arsip/...
-         */
         const previewUrl = url || (path ? toPreviewUrl(path) : '#');
-
-        // download optional: pakai /storage/... dari path (kalau path ada)
         const downloadUrl = path ? toDownloadUrl(path) : (url || '#');
 
         const cardWrap = document.createElement('div');

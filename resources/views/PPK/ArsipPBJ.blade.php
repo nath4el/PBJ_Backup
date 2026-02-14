@@ -33,6 +33,17 @@
 
   $unitName = auth()->user()->name ?? "PPK";
 
+  // ✅ ambil query dari URL (server-side filter)
+  $initialQ      = (string) request()->query('q', '');
+  $initialUnit   = (string) request()->query('unit', 'Semua');
+  $initialStatus = (string) request()->query('status', 'Semua');
+  $initialTahun  = (string) request()->query('tahun', 'Semua');
+
+  // ✅ normalisasi agar selected tetap jalan walau URL kirim lowercase/beda spasi
+  $initialUnitNorm   = trim(mb_strtolower($initialUnit, 'UTF-8'));
+  $initialStatusNorm = trim(mb_strtolower($initialStatus, 'UTF-8'));
+  $initialTahunNorm  = trim((string)$initialTahun);
+
   $rows = collect($arsips->items())->map(function($item) use ($unitName){
     // ✅ aman untuk model/array
     if (is_array($item)) {
@@ -161,20 +172,19 @@
 
   /**
    * ✅ URL DELETE (pakai route kalau ada, fallback ke /ppk/arsip/{id}/delete)
-   * - Kalau kamu punya named route, ganti nama 'ppk.arsip.delete' sesuai projectmu.
-   * - Blade ini dibuat robust supaya tetap jalan meski route name beda.
    */
   $deleteUrlTemplate = null;
 
-  // 1) Coba route name yang umum dipakai (kalau kamu sudah buat)
   if (\Illuminate\Support\Facades\Route::has('ppk.arsip.delete')) {
     $deleteUrlTemplate = route('ppk.arsip.delete', ['id' => '__ID__']);
   } elseif (\Illuminate\Support\Facades\Route::has('ppk.arsip.destroy')) {
     $deleteUrlTemplate = route('ppk.arsip.destroy', ['id' => '__ID__']);
   } else {
-    // 2) Fallback sesuai komentar di controller: /ppk/arsip/{id}/delete
     $deleteUrlTemplate = url('/ppk/arsip/__ID__/delete');
   }
+
+  // ✅ query appends untuk pagination (server-side)
+  $qs = request()->except('page');
 @endphp
 
 <div class="dash-wrap">
@@ -247,14 +257,15 @@
       <div class="ap-filter-row">
         <div class="ap-search">
           <i class="bi bi-search"></i>
-          <input id="apSearchInput" type="text" placeholder="Cari..." />
+          <input id="apSearchInput" type="text" placeholder="Cari..." value="{{ $initialQ }}" autocomplete="off" />
         </div>
 
         <div class="ap-select">
           <select id="apUnitFilter">
-            <option value="Semua">Semua Unit</option>
+            <option value="Semua" {{ $initialUnitNorm === 'semua' ? 'selected' : '' }}>Semua Unit</option>
             @foreach($unitOptions as $u)
-              <option value="{{ $u }}">{{ $u }}</option>
+              @php $uNorm = trim(mb_strtolower((string)$u, 'UTF-8')); @endphp
+              <option value="{{ $u }}" {{ $initialUnitNorm === $uNorm ? 'selected' : '' }}>{{ $u }}</option>
             @endforeach
           </select>
           <i class="bi bi-chevron-down"></i>
@@ -262,18 +273,18 @@
 
         <div class="ap-select">
           <select id="apStatusFilter">
-            <option value="Semua">Semua Status</option>
-            <option value="Publik">Publik</option>
-            <option value="Privat">Privat</option>
+            <option value="Semua" {{ $initialStatusNorm === 'semua' ? 'selected' : '' }}>Semua Status</option>
+            <option value="Publik" {{ $initialStatusNorm === 'publik' ? 'selected' : '' }}>Publik</option>
+            <option value="Privat" {{ $initialStatusNorm === 'privat' ? 'selected' : '' }}>Privat</option>
           </select>
           <i class="bi bi-chevron-down"></i>
         </div>
 
         <div class="ap-select">
           <select id="apYearFilter">
-            <option value="Semua">Semua Tahun</option>
+            <option value="Semua" {{ ($initialTahunNorm === 'Semua' || $initialTahunNorm === 'semua') ? 'selected' : '' }}>Semua Tahun</option>
             @foreach($years as $y)
-              <option value="{{ $y }}">{{ $y }}</option>
+              <option value="{{ $y }}" {{ $initialTahunNorm === (string)$y ? 'selected' : '' }}>{{ $y }}</option>
             @endforeach
           </select>
           <i class="bi bi-chevron-down"></i>
@@ -328,13 +339,30 @@
             'selesai'     => 'ap-sp ap-sp-done',
             default       => 'ap-sp',
           };
+
+          $nilaiRaw = preg_replace('/[^\d]/', '', (string)($r['nilai_kontrak'] ?? ''));
+          $nilaiRaw = $nilaiRaw === '' ? '0' : $nilaiRaw;
+
+          $hay = implode(' ', array_filter([
+            (string)($r['tahun'] ?? ''),
+            (string)($r['unit'] ?? ''),
+            (string)($r['pekerjaan'] ?? ''),
+            (string)($r['metode_pbj'] ?? ''),
+            (string)($r['nilai_kontrak'] ?? ''),
+            (string)$nilaiRaw,
+            (string)($r['status_arsip'] ?? ''),
+            (string)($r['status_pekerjaan'] ?? ''),
+          ]));
+
+          $hayLower = mb_strtolower($hay, 'UTF-8');
         @endphp
 
         <div class="ap-row"
-             data-status="{{ $r['status_arsip'] }}"
-             data-year="{{ $r['tahun'] }}"
-             data-unit="{{ $r['unit'] }}"
-             data-search="{{ strtolower($r['tahun'].' '.$r['unit'].' '.$r['pekerjaan'].' '.$r['metode_pbj'].' '.$r['nilai_kontrak'].' '.$r['status_pekerjaan']) }}">
+             data-status="{{ trim((string)($r['status_arsip'] ?? '-')) }}"
+             data-year="{{ trim((string)($r['tahun'] ?? '')) }}"
+             data-unit="{{ trim((string)($r['unit'] ?? '')) }}"
+             data-moneyraw="{{ $nilaiRaw }}"
+             data-search="{{ $hayLower }}">
 
           <div class="ap-check">
             <input class="ap-row-check" type="checkbox" value="{{ $r['id'] }}" aria-label="Pilih baris" />
@@ -364,7 +392,6 @@
           </div>
 
           <div class="ap-aksi ap-col-center">
-            {{-- ✅ PENTING: data-docs pakai htmlentities bawaan @json (AMAN utk attribute) --}}
             <a href="#"
               class="ap-detail js-open-detail"
               data-title="{{ $r['pekerjaan'] }}"
@@ -392,21 +419,29 @@
         </div>
 
         <div class="ap-pagination">
-          <a class="ap-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
-             href="{{ $arsips->onFirstPage() ? '#' : $arsips->previousPageUrl() }}"
-             aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}">
-            <i class="bi bi-chevron-left"></i>
-          </a>
-
           @php
             $current = $arsips->currentPage();
             $last = $arsips->lastPage();
             $start = max(1, $current - 2);
             $end   = min($last, $current + 2);
+
+            $prevHref = $arsips->onFirstPage()
+              ? '#'
+              : $arsips->appends($qs)->url($current - 1);
+
+            $nextHref = $arsips->hasMorePages()
+              ? $arsips->appends($qs)->url($current + 1)
+              : '#';
           @endphp
 
+          <a class="ap-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
+             href="{{ $prevHref }}"
+             aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}">
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
           @if($start > 1)
-            <a class="ap-page-btn" href="{{ $arsips->url(1) }}">1</a>
+            <a class="ap-page-btn" href="{{ $arsips->appends($qs)->url(1) }}">1</a>
             @if($start > 2)
               <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
             @endif
@@ -414,7 +449,7 @@
 
           @for($i = $start; $i <= $end; $i++)
             <a class="ap-page-btn {{ $i === $current ? 'is-active' : '' }}"
-               href="{{ $arsips->url($i) }}">
+               href="{{ $arsips->appends($qs)->url($i) }}">
               {{ $i }}
             </a>
           @endfor
@@ -423,11 +458,11 @@
             @if($end < $last - 1)
               <span class="ap-page-btn is-ellipsis" aria-hidden="true">…</span>
             @endif
-            <a class="ap-page-btn" href="{{ $arsips->url($last) }}">{{ $last }}</a>
+            <a class="ap-page-btn" href="{{ $arsips->appends($qs)->url($last) }}">{{ $last }}</a>
           @endif
 
           <a class="ap-page-btn {{ $arsips->hasMorePages() ? '' : 'is-disabled' }}"
-             href="{{ $arsips->hasMorePages() ? $arsips->nextPageUrl() : '#' }}"
+             href="{{ $nextHref }}"
              aria-disabled="{{ $arsips->hasMorePages() ? 'false' : 'true' }}">
             <i class="bi bi-chevron-right"></i>
           </a>
@@ -522,7 +557,6 @@
 
           <div class="dt-budget">
             <div class="dt-label">Nilai Kontrak</div>
-            {{-- ✅ FIX (HANYA LIHAT DETAIL): penutup div yang benar --}}
             <div class="dt-money" id="dtKontrak">-</div>
           </div>
         </div>
@@ -531,13 +565,11 @@
 
         <div class="dt-section-title">Dokumen Pengadaan</div>
 
-        {{-- ✅ SAMAKAN DENGAN UNIT: card + tombol download --}}
         <div class="dt-doc-grid" id="dtDocList"></div>
         <div class="dt-doc-empty" id="dtDocEmpty" hidden style="margin-top:10px;opacity:.85;">
           Tidak ada dokumen yang diupload.
         </div>
 
-        {{-- ✅ KOLOM E --}}
         <div class="dt-doc-note" id="dtDocNoteWrap" hidden>
           <div class="dt-doc-note-ic"><i class="bi bi-info-circle"></i></div>
           <div class="dt-doc-note-txt">
@@ -554,18 +586,15 @@
 <style>
   /* (CSS kamu tetap sama — tidak diubah) */
   body.page-arsip.dash-body{font-size:18px;line-height:1.6;}
-
   .page-arsip{
     --ap-field-h:46px;--ap-field-r:12px;--ap-field-px:12px;
     --ap-sp-h:34px;--ap-sp-w:124px;--ap-sp-r:8px;
     --ap-row-divider:2px;
     --unsoed-yellow:#f6c100;--unsoed-yellow-dark:#d9aa00;
   }
-
   .page-arsip .ap-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
   .page-arsip .ap-header-left{min-width:0;}
   .page-arsip .ap-header-right{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;}
-
   .page-arsip .ap-print-btn{
     height:42px;padding:0 14px;border-radius:12px;border:1px solid rgba(0,0,0,.08);
     background:var(--unsoed-yellow);color:#1b1b1b;font-size:15px;font-weight:400;
@@ -575,21 +604,16 @@
   .page-arsip .ap-print-btn:hover{background:var(--unsoed-yellow-dark);transform:translateY(-1px);}
   .page-arsip .ap-print-btn:active{transform:translateY(0);}
   .page-arsip .ap-print-btn i{font-size:16px;line-height:1;display:block;}
-
   .page-arsip .ap-filter-row{display:flex;gap:12px;align-items:center;flex-wrap:nowrap;}
-
   .page-arsip .ap-search{position:relative;flex:1 1 auto;min-width:220px;height:var(--ap-field-h);display:flex;align-items:center;}
   .page-arsip .ap-search i{position:absolute;left:var(--ap-field-px);top:50%;transform:translateY(-50%);font-size:18px;opacity:.75;pointer-events:none;}
   .page-arsip .ap-search input{width:100%;height:100%;font-size:16px;padding:0 calc(var(--ap-field-px) + 6px) 0 44px;border-radius:var(--ap-field-r);box-sizing:border-box;}
-
   .page-arsip .ap-select{position:relative;flex:0 0 200px;min-width:200px;height:var(--ap-field-h);display:flex;align-items:center;}
   .page-arsip .ap-select select{width:100%;height:100%;font-size:16px;padding:0 42px 0 var(--ap-field-px);border-radius:var(--ap-field-r);box-sizing:border-box;}
   .page-arsip .ap-select i{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;}
-
   .page-arsip .ap-tools{display:flex;gap:10px;align-items:center;flex:0 0 auto;}
   .page-arsip .ap-icbtn{width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;}
   .page-arsip .ap-icbtn i{font-size:18px;line-height:1;display:block;}
-
   .page-arsip .ap-head,
   .page-arsip .ap-row{
     display:grid;
@@ -600,67 +624,52 @@
     font-size:16px;
     align-items:center;
   }
-
   .page-arsip .ap-head > div,
   .page-arsip .ap-row > div{text-align:left;justify-self:start;min-width:0;}
   .page-arsip .ap-col-left{text-align:left !important;justify-self:start !important;}
   .page-arsip .ap-col-center{text-align:center !important;justify-self:center !important;}
-
   .page-arsip .ap-nilai-sort{display:inline-flex;align-items:center;justify-content:center;gap:2px;}
   .page-arsip .ap-sort-btn{width:32px;height:32px;border-radius:10px;border:none;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s ease;padding:0;line-height:1;}
   .page-arsip .ap-sort-btn:hover{background:transparent;}
   .page-arsip .ap-sort-btn i{font-size:20px;line-height:1;display:block;color:#fff !important;}
-
   .page-arsip .ap-arsip-center{display:flex;justify-content:center;align-items:center;}
   .page-arsip .ap-job{line-height:1.35;overflow-wrap:anywhere;}
   .page-arsip .ap-money{display:inline-block;color:var(--navy2);font-weight:400;white-space:nowrap;line-height:1.2;}
   .page-arsip .ap-row{border-top:var(--ap-row-divider) solid #eef3f6;}
-
   .page-arsip .ap-sp{display:inline-flex;align-items:center;justify-content:center;height:var(--ap-sp-h);width:var(--ap-sp-w);padding:0 14px;border-radius:var(--ap-sp-r);font-size:15px;white-space:nowrap;text-align:center;}
   .page-arsip .ap-sp-plan{background:#FDF0A8;}
   .page-arsip .ap-sp-select{background:#E8C9FF;}
   .page-arsip .ap-sp-do{background:#F8B8B8;}
   .page-arsip .ap-sp-done{background:#BFE9BF;}
-
   .page-arsip .ap-eye,
   .page-arsip .ap-detail{font-size:15.5px;}
-
   .page-arsip .dt-title{font-size:20px;}
   .page-arsip .dt-label{font-size:15px;}
   .page-arsip .dt-val{font-size:16px;}
   .page-arsip .dt-section-title{font-size:18px;}
   .page-arsip .dt-money{font-size:18px;}
-
   .page-arsip .ap-icbtn.is-disabled{opacity:.45;cursor:not-allowed;pointer-events:auto;}
-
   .page-arsip .dt-modal{position:fixed;inset:0;z-index:9999;display:none;}
   .page-arsip .dt-modal.is-open{display:flex;align-items:center;justify-content:center;padding:10px;}
   .page-arsip .dt-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
-
   .page-arsip .dt-panel{width:min(1440px, 96vw) !important;max-height:calc(100vh - 20px) !important;display:flex;position:relative;z-index:1;border-radius:24px !important;overflow:hidden;}
   .page-arsip .dt-card{width:100%;display:flex;flex-direction:column;min-height:0;border-radius:24px !important;background:#fff;overflow:hidden;}
-
   .page-arsip .dt-topbar{position:sticky;top:0;z-index:3;background:#fff;padding:18px 18px 12px;border-bottom:1px solid #eef3f6;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
   .page-arsip .dt-topbar .dt-title{flex:1 1 auto;min-width:0;margin:0;line-height:1.35;overflow-wrap:anywhere;transform:translate(6px,-8px) !important;}
   .page-arsip .dt-close-inside{margin-top:-8px;flex:0 0 auto;width:44px;height:44px;border-radius:16px;display:grid;place-items:center;padding:0;position:static;}
   .page-arsip .dt-close-inside i{display:block;line-height:1;font-size:18px;}
   .page-arsip .dt-topbar .dt-close-inside{transform:translate(6px,-8px) !important;}
-
   .page-arsip .dt-body{padding:16px 18px 18px;overflow-y:auto;min-height:0;overscroll-behavior:contain;}
   .page-arsip .dt-body::-webkit-scrollbar{width:10px;}
   .page-arsip .dt-body::-webkit-scrollbar-track{border-radius:24px;background:transparent;margin:10px 0;}
   .page-arsip .dt-body::-webkit-scrollbar-thumb{border-radius:24px;background:rgba(15,23,42,.18);}
-
   .page-arsip .dt-doc-note{margin-top:14px;border:1px solid #e8eef3;background:#f8fbfd;border-radius:16px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;}
   .page-arsip .dt-doc-note-ic{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:#ffffff;border:1px solid #e8eef3;flex:0 0 auto;}
   .page-arsip .dt-doc-note-ic i{font-size:18px;line-height:1;display:block;opacity:.9;}
   .page-arsip .dt-doc-note-title{font-size:14px;font-weight:700;margin-bottom:2px;color:#0f172a;}
   .page-arsip .dt-doc-note-desc{font-size:13.5px;color:#475569;line-height:1.5;}
-
-  /* ✅ DOKUMEN: CARD 2 KOLOM + tombol DOWNLOAD di kanan (seperti Unit) */
   .page-arsip .dt-doc-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
   @media (max-width: 900px){ .page-arsip .dt-doc-grid{ grid-template-columns: 1fr; } }
-
   .page-arsip .dt-doc-card{
     border: 1px solid #e8eef3;
     background:#fff;
@@ -709,7 +718,6 @@
     color: inherit;
   }
   .page-arsip .dt-doc-act i{ font-size: 16px; }
-
   .page-arsip .ap-pagination-wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px 16px;border-top:2px solid #eef3f6;}
   .page-arsip .ap-page-info{font-size:13.5px;color:#64748b;white-space:nowrap;}
   .page-arsip .ap-pagination{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
@@ -718,7 +726,6 @@
   .page-arsip .ap-page-btn.is-active{border-color:transparent;background:var(--navy2);color:#fff;}
   .page-arsip .ap-page-btn.is-disabled{opacity:.55;pointer-events:none;background:#f8fafc;}
   .page-arsip .ap-page-btn.is-ellipsis{pointer-events:none;background:transparent;border-color:transparent;min-width:24px;padding:0 4px;}
-
   @media (max-width: 1100px){
     .page-arsip .ap-filter-row{flex-wrap:wrap;}
     .page-arsip .ap-search{flex:1 1 320px;min-width:260px;}
@@ -728,7 +735,6 @@
     .page-arsip .ap-header{flex-direction:column;align-items:flex-start;}
     .page-arsip .ap-header-right{width:100%;justify-content:flex-end;}
   }
-
   @media print{
     .dash-sidebar,.ap-filter,.ap-tools,.ap-aksi,.ap-head .ap-check,.ap-row .ap-check,.ap-header-right,.dt-modal,.ap-pagination-wrap{display:none !important;}
     .dash-main{width:100% !important;}
@@ -758,7 +764,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const printBtn   = document.getElementById('apPrintBtn');
 
   const csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-  const deleteUrlTemplate = @json($deleteUrlTemplate); // berisi .../__ID__/delete atau route name
+  const deleteUrlTemplate = @json($deleteUrlTemplate);
+
+  // ✅ base URL aman (tetap /ppk/arsip)
+  const baseUrl = @json(url('/ppk/arsip'));
 
   const getRows = () => Array.from(document.querySelectorAll('.ap-row'));
   const getVisibleRows = () => getRows().filter(r => r.style.display !== 'none');
@@ -809,39 +818,71 @@ document.addEventListener('DOMContentLoaded', function () {
     setBtnDisabled(deleteBtn, ids.length === 0);
   }
 
-  function applyFilters(){
-    const unitVal   = unitEl ? unitEl.value : 'Semua';
-    const statusVal = filterEl ? filterEl.value : 'Semua';
-    const yearVal   = yearEl ? yearEl.value : 'Semua';
-    const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  // =========================
+  // ✅ SERVER-SIDE FILTER NAVIGATION (debounce)
+  // =========================
+  let navTimer = null;
 
-    getRows().forEach(row => {
-      const u = row.getAttribute('data-unit');
-      const s = row.getAttribute('data-status');
-      const y = row.getAttribute('data-year');
-      const hay = (row.getAttribute('data-search') || '').toLowerCase();
+  function buildUrlFromFilters(){
+    const url = new URL(baseUrl, window.location.origin);
 
-      const unitOk   = (unitVal === 'Semua')   || (u === unitVal);
-      const statusOk = (statusVal === 'Semua') || (s === statusVal);
-      const yearOk   = (yearVal === 'Semua')   || (y === yearVal);
-      const searchOk = (q === '') || hay.includes(q);
+    const q = (searchEl ? searchEl.value : '').trim();
+    const unit = (unitEl ? unitEl.value : 'Semua');
+    const status = (filterEl ? filterEl.value : 'Semua');
+    const tahun = (yearEl ? yearEl.value : 'Semua');
 
-      row.style.display = (unitOk && statusOk && yearOk && searchOk) ? '' : 'none';
-    });
+    if(q) url.searchParams.set('q', q);
 
-    syncSelectAllState();
-    updateEditState();
-    updateDeleteState();
+    if(unit && unit !== 'Semua') url.searchParams.set('unit', unit);
+    if(status && status !== 'Semua') url.searchParams.set('status', status);
+    if(tahun && tahun !== 'Semua') url.searchParams.set('tahun', tahun);
+
+    // ✅ reset page saat filter berubah
+    url.searchParams.delete('page');
+
+    return url.toString();
   }
 
-  if (unitEl)  unitEl.addEventListener('change', applyFilters);
-  if (filterEl) filterEl.addEventListener('change', applyFilters);
-  if (yearEl)   yearEl.addEventListener('change', applyFilters);
-  if (searchEl) searchEl.addEventListener('input', applyFilters);
+  function scheduleNavigate(){
+    clearTimeout(navTimer);
+    navTimer = setTimeout(() => {
+      const next = buildUrlFromFilters();
+      if(next !== window.location.href){
+        window.location.href = next;
+      }
+    }, 1500);
+  }
+
+  if(unitEl)   unitEl.addEventListener('change', scheduleNavigate);
+  if(filterEl) filterEl.addEventListener('change', scheduleNavigate);
+  if(yearEl)   yearEl.addEventListener('change', scheduleNavigate);
+
+  if(searchEl){
+    // ✅ Enter jangan submit form
+    searchEl.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        e.stopPropagation();
+        scheduleNavigate();
+        return false;
+      }
+    });
+
+    // ✅ ketik -> debounce reload sekali (tidak refresh-refresh)
+    searchEl.addEventListener('input', scheduleNavigate);
+
+    if (searchEl.form){
+      searchEl.form.addEventListener('submit', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      });
+    }
+  }
 
   if(refreshBtn){
     refreshBtn.addEventListener('click', function(){
-      window.location.reload();
+      window.location.href = baseUrl; // reset filter
     });
   }
 
@@ -860,12 +901,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // ✅ FINAL: HAPUS BENERAN KE DATABASE (bukan dummy)
   async function deleteOne(id){
     const url = String(deleteUrlTemplate || '').replace('__ID__', encodeURIComponent(id));
 
     const res = await fetch(url, {
-      method: 'POST', // method spoofing
+      method: 'POST',
       headers: {
         'X-CSRF-TOKEN': csrfToken,
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -931,7 +971,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  applyFilters();
   syncSelectAllState();
   updateEditState();
   updateDeleteState();
@@ -950,7 +989,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // =========================
-  // SORT NILAI KONTRAK
+  // SORT NILAI KONTRAK (tetap, hanya sort DOM page ini)
   // =========================
   const btn   = document.getElementById('sortNilaiBtn');
   const icon  = document.getElementById('sortNilaiIcon');
@@ -995,7 +1034,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // =========================
-  // MODAL DETAIL (✅ FIX + dokumen card + download)
+  // MODAL DETAIL (tetap)
   // =========================
   const modal = document.getElementById('dtModal');
   const closeBtn = document.getElementById('dtCloseBtn');

@@ -1196,9 +1196,9 @@
       });
     });
 
-    // "Pilih File" trigger input
+    // "Pilih File" trigger input (✅ pakai picker kalau ada)
     document.querySelectorAll('.tp-dropzone').forEach(zone => {
-      const input = zone.querySelector('input[type="file"]');
+      const input = zone.querySelector('input.tp-file-picker[type="file"]') || zone.querySelector('input[type="file"]');
       const btn = zone.querySelector('.tp-drop-btn');
 
       const title = zone.querySelector('.tp-drop-title');
@@ -1236,17 +1236,18 @@
       return mb.toFixed(1) + ' MB';
     };
 
-    // ✅ Hapus existing file via AJAX -> UnitController@hapusDokumenFile
+    // ✅ Hapus existing file via AJAX -> (ROUTE DELETE)
     const deleteExisting = async ({arsipId, field, path}) => {
       const url = @json(route('unit.arsip.dokumen.hapus', ['id' => '__ID__']));
       const target = url.replace('__ID__', String(arsipId));
 
       const res = await fetch(target, {
-        method: 'POST',
+        method: 'DELETE', // ✅ FIX: route kamu support DELETE
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': @json(csrf_token()),
           'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify({ field, path })
       });
@@ -1264,12 +1265,25 @@
 
     // Edit mode: existing + new
     document.querySelectorAll('.tp-acc-item').forEach(item => {
-      const fileInput = item.querySelector('input[type="file"]');
+      const realInput = item.querySelector('input[type="file"].tp-file-hidden[name]');
       const zone = item.querySelector('.tp-dropzone');
-      if(!fileInput || !zone) return;
+      if(!realInput || !zone) return;
 
-      const arsipId = parseInt(fileInput.getAttribute('data-arsip-id') || '0', 10);
-      const fieldKey = fileInput.getAttribute('data-key') || '';
+      // ✅ FIX: bikin "picker input" terpisah biar realInput tetap nyimpen files untuk submit
+      let pickerInput = zone.querySelector('input.tp-file-picker[type="file"]');
+      if(!pickerInput){
+        pickerInput = document.createElement('input');
+        pickerInput.type = 'file';
+        pickerInput.multiple = true;
+        pickerInput.className = 'tp-file-hidden tp-file-picker';
+        pickerInput.setAttribute('data-key', realInput.getAttribute('data-key') || '');
+        pickerInput.setAttribute('data-arsip-id', realInput.getAttribute('data-arsip-id') || '');
+        // taruh sebelum real input biar tetap di dalam label
+        zone.insertBefore(pickerInput, realInput);
+      }
+
+      const arsipId = parseInt(realInput.getAttribute('data-arsip-id') || '0', 10);
+      const fieldKey = realInput.getAttribute('data-key') || '';
 
       const title = zone.querySelector('.tp-drop-title');
       const sub = zone.querySelector('.tp-drop-sub');
@@ -1286,7 +1300,7 @@
       const rebuildInputFiles = () => {
         const dt = new DataTransfer();
         storedFiles.forEach(f => dt.items.add(f));
-        fileInput.files = dt.files;
+        realInput.files = dt.files; // ✅ FIX: yang disubmit adalah realInput
       };
 
       const ensureWrapVisible = () => {
@@ -1399,7 +1413,7 @@
         }
       };
 
-      // ✅ remove existing -> ajax delete
+      // ✅ remove existing -> ajax delete (DELETE)
       item.querySelectorAll('.js-remove-existing').forEach(btnX => {
         btnX.addEventListener('click', async (ev) => {
           ev.preventDefault();
@@ -1425,8 +1439,9 @@
         });
       });
 
-      fileInput.addEventListener('change', () => {
-        const picked = (fileInput.files && fileInput.files.length) ? Array.from(fileInput.files) : [];
+      // ✅ pilih file lewat picker, lalu simpan ke realInput (untuk submit)
+      pickerInput.addEventListener('change', () => {
+        const picked = (pickerInput.files && pickerInput.files.length) ? Array.from(pickerInput.files) : [];
         if(picked.length){
           const existing = new Set(storedFiles.map(fileKey));
           picked.forEach(f => {
@@ -1436,9 +1451,10 @@
               existing.add(k);
             }
           });
-          rebuildInputFiles();
+          rebuildInputFiles(); // ✅ ini yang bikin file benar2 ikut tersubmit
         }
-        fileInput.value = '';
+        // ✅ aman dikosongkan karena ini picker, bukan real input
+        pickerInput.value = '';
         syncUI();
       });
 

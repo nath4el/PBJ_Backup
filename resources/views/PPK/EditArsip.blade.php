@@ -849,6 +849,8 @@
   });
 
   document.addEventListener('DOMContentLoaded', function(){
+    const formEl = document.getElementById('editForm');
+
     // ✅ Hapus Perubahan: reload
     const resetBtn = document.getElementById('btnResetChanges');
     if(resetBtn) resetBtn.addEventListener('click', () => window.location.reload());
@@ -1068,7 +1070,7 @@
         }
       };
 
-      // remove existing (UI only). Jika mau benar-benar hapus di server, buat endpoint delete di controller.
+      // ✅ remove existing (SEKARANG: buat hidden input *_remove[] supaya TERSIMPAN di DB saat submit)
       item.querySelectorAll('.js-remove-existing').forEach(btnX => {
         btnX.addEventListener('click', (ev) => {
           ev.preventDefault();
@@ -1076,6 +1078,18 @@
 
           const row = btnX.closest('.tp-preview-item.tp-existing');
           if(!row) return;
+
+          const field = row.getAttribute('data-field') || '';
+          const path  = row.getAttribute('data-path') || '';
+
+          // ✅ kirim ke server: {field}_remove[] = path
+          if(formEl && field && path){
+            const hid = document.createElement('input');
+            hid.type = 'hidden';
+            hid.name = `${field}_remove[]`;
+            hid.value = path;
+            formEl.appendChild(hid);
+          }
 
           row.remove();
           syncUI();
@@ -1095,7 +1109,10 @@
           });
           rebuildInputFiles();
         }
-        fileInput.value = '';
+
+        // ✅ FIX UTAMA: JANGAN kosongkan fileInput.value karena itu menghapus file yang akan di-submit
+        // fileInput.value = '';
+
         syncUI();
       });
 

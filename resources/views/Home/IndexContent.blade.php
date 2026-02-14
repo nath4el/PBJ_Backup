@@ -376,7 +376,122 @@
   #mDocs .pbj-doc-act:hover{ background:#eef6f8; }
 </style>
 
-{{-- STATISTIKA (SAMA PERSIS LANDING) --}}
+@php
+  /**
+   * ==========================================
+   * ✅ STATISTIKA REALTIME (PUBLIK) — CONNECT KE Home/pbj
+   * - Dropdown Tahun: "Semua Tahun"
+   * - Dropdown Unit: dari units.nama (yang dipakai di pengadaan publik)
+   * - Hapus dummy data (diganti JSON dari DB)
+   * ==========================================
+   */
+
+  $statusList = ["Perencanaan","Pemilihan","Pelaksanaan","Selesai"];
+
+  // Tahun options dari DB (publik)
+  $statYearOptions = \App\Models\Pengadaan::where('status_arsip','Publik')
+    ->whereNotNull('tahun')
+    ->select('tahun')->distinct()
+    ->orderBy('tahun','desc')
+    ->pluck('tahun')
+    ->map(fn($t)=>(int)$t)
+    ->values()
+    ->all();
+
+  // Unit options dari DB (publik) => ikut Home/pbj: hanya unit yang muncul pada pengadaan publik
+  $unitIdsPublik = \App\Models\Pengadaan::where('status_arsip','Publik')
+    ->whereNotNull('unit_id')
+    ->select('unit_id')->distinct()
+    ->pluck('unit_id')
+    ->all();
+
+  $statUnitOptions = \App\Models\Unit::whereIn('id', $unitIdsPublik)
+    ->orderBy('nama')
+    ->get(['id','nama'])
+    ->map(fn($u)=>['id'=>$u->id,'nama'=>$u->nama])
+    ->values()
+    ->all();
+
+  // Kategori metode pengadaan (bar)
+  $METHOD_KEYS = [
+    'Pengadaan Langsung',
+    'Penunjukan Langsung',
+    'E-Purchasing/E-Catalog',
+    'Tender Terbatas',
+    'Tender Terbuka',
+    'Swakelola',
+  ];
+
+  $normalizeMethod = function($raw){
+    $s = strtolower(trim((string)$raw));
+    if($s === '') return null;
+
+    $s = str_replace(['_', '-'], ' ', $s);
+    $s = preg_replace('/\s+/', ' ', $s);
+
+    if(str_contains($s, 'pengadaan langsung')) return 'Pengadaan Langsung';
+    if(str_contains($s, 'penunjukan langsung')) return 'Penunjukan Langsung';
+    if(str_contains($s, 'e purchasing') || str_contains($s, 'e-purchasing') || str_contains($s, 'e catalog') || str_contains($s, 'e-catalog') || str_contains($s, 'ecatalog')) return 'E-Purchasing/E-Catalog';
+    if(str_contains($s, 'tender terbatas')) return 'Tender Terbatas';
+    if(str_contains($s, 'tender terbuka')) return 'Tender Terbuka';
+    if($s === 'tender') return 'Tender Terbuka';
+    if(str_contains($s, 'swakelola')) return 'Swakelola';
+
+    return null;
+  };
+
+  $makeKey = fn($year) => $year === null ? 'all' : (string)(int)$year;
+
+  $donutData = []; // yearKey => unitKey => [statusCounts]
+  $barData   = []; // yearKey => unitKey => [methodCounts]
+
+  $yearsForBuild = array_merge([null], $statYearOptions); // null = all
+  $unitsForBuild = array_merge([null], array_map(fn($x)=>$x['id'], $statUnitOptions)); // null = all
+
+  foreach($yearsForBuild as $y){
+    $yKey = $makeKey($y);
+    $donutData[$yKey] = [];
+    $barData[$yKey]   = [];
+
+    foreach($unitsForBuild as $uid){
+      $uKey = $uid === null ? 'all' : (string)(int)$uid;
+
+      $q = \App\Models\Pengadaan::query()->where('status_arsip','Publik');
+      if($y !== null)   $q->where('tahun', (int)$y);
+      if($uid !== null) $q->where('unit_id', (int)$uid);
+
+      // donut counts by status_pekerjaan
+      $statusCounts = $q->clone()
+        ->selectRaw('status_pekerjaan as s, COUNT(*) as c')
+        ->groupBy('status_pekerjaan')
+        ->pluck('c','s')
+        ->toArray();
+
+      $donutData[$yKey][$uKey] = array_map(function($st) use ($statusCounts){
+        return (int)($statusCounts[$st] ?? 0);
+      }, $statusList);
+
+      // bar counts by jenis_pengadaan (normalize ke 6 bucket)
+      $jenisCounts = $q->clone()
+        ->selectRaw('jenis_pengadaan as j, COUNT(*) as c')
+        ->groupBy('jenis_pengadaan')
+        ->pluck('c','j')
+        ->toArray();
+
+      $bucket = array_fill_keys($METHOD_KEYS, 0);
+      foreach($jenisCounts as $rawJenis => $cnt){
+        $k = $normalizeMethod($rawJenis);
+        if($k && array_key_exists($k, $bucket)){
+          $bucket[$k] += (int)$cnt;
+        }
+      }
+
+      $barData[$yKey][$uKey] = array_values($bucket);
+    }
+  }
+@endphp
+
+{{-- STATISTIKA (REALTIME) --}}
 <section class="stats-wrap" id="statistika">
   <div class="container">
     <div class="section-title">
@@ -453,7 +568,6 @@ function openDetailModal(payload){
   docsWrap.innerHTML = '';
 
   const toViewerUrl = (storageUrl) => {
-    // ✅ mode=public agar viewer public bisa disable download tanpa ganggu PPK
     return `/file-viewer?file=${encodeURIComponent(storageUrl)}&mode=public`;
   };
 
@@ -481,7 +595,6 @@ function openDetailModal(payload){
           <span class="pbj-doc-name" title="${esc(name)}">${esc(name)}</span>
         </div>
 
-        <!-- ✅ HANYA ICON EYE, TIDAK ADA DOWNLOAD -->
         <a href="${esc(viewer)}"
            target="_blank"
            class="pbj-doc-act"
@@ -515,7 +628,6 @@ function openDetailModal(payload){
     noteBox.style.display = 'none';
   }
 
-  // show modal
   modal.classList.add('show');
   document.body.style.overflow = 'hidden';
 }
@@ -549,17 +661,71 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 /* =========================
-   DATA DUMMY (STATISTIKA — tetap seperti sebelumnya)
+   ✅ COUNT-UP (SAMA SEPERTI PPK)
+   (Jalan kalau ada elemen .js-count)
 ========================= */
-const donutData = {
-  "2020": { "all": [28, 17, 22, 33], "Fakultas Pertanian": [10, 10, 30, 50] },
-  "2021": { "all": [20, 25, 15, 40], "Fakultas Pertanian": [12, 18, 30, 40] }
-};
+const CountFX = (() => {
+  const DEFAULT_DURATION = 900;
 
-const barData = {
-  "2020": { "all": [35, 90, 65, 50, 75, 25], "Fakultas Pertanian": [10, 40, 20, 15, 25, 8] },
-  "2021": { "all": [20, 70, 55, 40, 60, 18], "Fakultas Pertanian": [12, 35, 25, 10, 22, 6] }
-};
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  const parseNumber = (txt) => {
+    const s = String(txt ?? '').replace(/[^\d]/g, '');
+    return Number(s || 0);
+  };
+
+  const formatNumber = (n) => {
+    return Math.round(n).toLocaleString('id-ID');
+  };
+
+  const setText = (el, n) => {
+    const prefix = el?.dataset?.prefix || '';
+    const suffix = el?.dataset?.suffix || '';
+    el.textContent = `${prefix}${formatNumber(n)}${suffix}`;
+  };
+
+  const playOnceWhenVisible = (list) => {
+    if(!list || !list.length) return;
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if(!e.isIntersecting) return;
+        const el = e.target;
+        io.unobserve(el);
+
+        const to = Number(el.dataset.count || 0);
+        const start = performance.now();
+
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / DEFAULT_DURATION);
+          const p = easeOutCubic(t);
+          const cur = to * p;
+          setText(el, cur);
+          if(t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }, { threshold: 0.25 });
+
+    list.forEach(el => io.observe(el));
+  };
+
+  return { playOnceWhenVisible };
+})();
+document.addEventListener('DOMContentLoaded', () => {
+  CountFX.playOnceWhenVisible(document.querySelectorAll('.js-count'));
+});
+
+/* =========================
+   ✅ STATISTIKA REALTIME (DB)
+   - Dropdown Tahun => "Semua Tahun"
+   - Dropdown Unit => ikut Home/pbj (units.nama)
+   - Hapus dummy data
+========================= */
+const DONUT_DATA = @json($donutData);
+const BAR_DATA   = @json($barData);
+const YEAR_OPTIONS = @json($statYearOptions);
+const UNIT_OPTIONS = @json($statUnitOptions);
 
 const BAR_LABELS = [
   ["Pengadaan","Langsung"],
@@ -570,151 +736,166 @@ const BAR_LABELS = [
   ["Swakelola"]
 ];
 
-function pickData(obj, year, unit, fallbackLen){
-  if(obj?.[year]?.[unit]) return obj[year][unit];
-  if(obj?.[year]?.all) return obj[year].all;
+const pickData = (obj, yearKey, unitKey, fallbackLen) => {
+  if(obj?.[yearKey]?.[unitKey]) return obj[yearKey][unitKey];
+  if(obj?.[yearKey]?.all) return obj[yearKey].all;
+  if(obj?.all?.[unitKey]) return obj.all[unitKey];
+  if(obj?.all?.all) return obj.all.all;
   return new Array(fallbackLen).fill(0);
-}
-
-/* =========================
-   INIT DONUT (SAMA PERSIS LANDING)
-========================= */
-const donutColors = ['#0B4A5E', '#111827', '#F6C100', '#D6A357'];
-
-const donutCtx = document.getElementById('landingDonut');
-const donutYearEl = document.getElementById('donutYear');
-const donutUnitEl = document.getElementById('donutUnit');
-
-let donutChart = null;
-
-if(donutCtx){
-  const initYear = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-  const initUnit = donutUnitEl?.value || "all";
-
-  donutChart = new Chart(donutCtx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
-      datasets: [{
-        data: pickData(donutData, initYear, initUnit, 4),
-        backgroundColor: donutColors,
-        borderWidth: 0
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '55%',
-      layout: { padding: { right: 70 } },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'right',
-          labels: {
-            boxWidth: 10,
-            boxHeight: 10,
-            padding: 12,
-            font: { family: 'Nunito', weight: '400', size: 14 }
-          }
-        },
-        tooltip: { enabled: true }
-      }
-    }
-  });
-
-  function updateDonut(){
-    const year = (donutYearEl?.value && donutYearEl.value !== 'Tahun') ? donutYearEl.value : "2020";
-    const unit = donutUnitEl?.value || "all";
-    donutChart.data.datasets[0].data = pickData(donutData, year, unit, 4);
-    donutChart.update();
-  }
-
-  donutYearEl?.addEventListener('change', updateDonut);
-  donutUnitEl?.addEventListener('change', updateDonut);
-}
-
-/* =========================
-   INIT BAR (SAMA PERSIS LANDING)
-========================= */
-const splitLabel = (value) => {
-  if(Array.isArray(value)) return value;
-  const s = String(value ?? '');
-  if(s.includes('\n')) return s.split('\n');
-  const parts = s.trim().split(/\s+/);
-  if(parts.length === 2) return [parts[0], parts[1]];
-  return s;
 };
 
-const barCtx = document.getElementById('landingBar');
-const barYearEl = document.getElementById('barYear');
-const barUnitEl = document.getElementById('barUnit');
+const ensureOptions = (selectEl, items, type) => {
+  if(!selectEl) return;
 
-let barChart = null;
+  // build options
+  let html = '';
+  if(type === 'year'){
+    html += `<option value="">Semua Tahun</option>`;
+    (items || []).forEach(y => {
+      html += `<option value="${String(y)}">${String(y)}</option>`;
+    });
+  }else if(type === 'unit'){
+    html += `<option value="">Semua Unit</option>`;
+    (items || []).forEach(u => {
+      html += `<option value="${String(u.id)}">${String(u.nama)}</option>`;
+    });
+  }
+  selectEl.innerHTML = html;
+};
 
-if(barCtx){
-  const initYear = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-  const initUnit = barUnitEl?.value || "all";
+document.addEventListener('DOMContentLoaded', () => {
+  // ids dari partial (umumnya)
+  const donutYearEl = document.getElementById('donutYear');
+  const donutUnitEl = document.getElementById('donutUnit');
+  const barYearEl   = document.getElementById('barYear');
+  const barUnitEl   = document.getElementById('barUnit');
 
-  barChart = new Chart(barCtx, {
-    type: 'bar',
-    data: {
-      labels: BAR_LABELS,
-      datasets: [{
-        label: initYear,
-        data: pickData(barData, initYear, initUnit, 6),
-        backgroundColor: '#F6C100',
-        borderWidth: 0,
-        borderRadius: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { font: { family: 'Nunito', weight: '400', size: 14 } }
-        },
-        tooltip: { enabled: true }
+  // ✅ paksa dropdown sesuai DB (tanpa perlu ubah partial)
+  ensureOptions(donutYearEl, YEAR_OPTIONS, 'year');
+  ensureOptions(barYearEl,   YEAR_OPTIONS, 'year');
+  ensureOptions(donutUnitEl, UNIT_OPTIONS, 'unit');
+  ensureOptions(barUnitEl,   UNIT_OPTIONS, 'unit');
+
+  // default: Semua Tahun + Semua Unit
+  if(donutYearEl) donutYearEl.value = '';
+  if(barYearEl)   barYearEl.value = '';
+  if(donutUnitEl) donutUnitEl.value = '';
+  if(barUnitEl)   barUnitEl.value = '';
+
+  // init donut
+  const donutCtx = document.getElementById('landingDonut');
+  let donutChart = null;
+
+  if(donutCtx && window.Chart){
+    donutChart = new Chart(donutCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
+        datasets: [{
+          data: pickData(DONUT_DATA, 'all', 'all', 4),
+          backgroundColor: ['#0B4A5E', '#111827', '#F6C100', '#D6A357'],
+          borderWidth: 0
+        }]
       },
-      scales: {
-        y: {
-          beginAtZero: true,
-          max: 100,
-          ticks: {
-            stepSize: 20,
-            precision: 0,
-            font: { family: 'Nunito', weight: '400', size: 14 }
-          }
-        },
-        x: {
-          ticks: {
-            maxRotation: 0,
-            minRotation: 0,
-            autoSkip: false,
-            padding: 6,
-            font: { family: 'Nunito', weight: '400', size: 11 },
-            callback: function (value) {
-              const raw = this.getLabelForValue(value);
-              return splitLabel(raw);
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '55%',
+        layout: { padding: { right: 70 } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'right',
+            labels: {
+              boxWidth: 10,
+              boxHeight: 10,
+              padding: 12,
+              font: { family: 'Nunito', weight: '400', size: 14 }
             }
           },
-          grid: { display: false }
+          tooltip: { enabled: true }
         }
       }
-    }
-  });
+    });
 
-  function updateBar(){
-    const year = (barYearEl?.value && barYearEl.value !== 'Tahun') ? barYearEl.value : "2020";
-    const unit = barUnitEl?.value || "all";
-    barChart.data.datasets[0].label = year;
-    barChart.data.datasets[0].data = pickData(barData, year, unit, 6);
-    barChart.update();
+    const updateDonut = () => {
+      const yearKey = (donutYearEl?.value || '').trim() === '' ? 'all' : String(donutYearEl.value);
+      const unitKey = (donutUnitEl?.value || '').trim() === '' ? 'all' : String(donutUnitEl.value);
+      donutChart.data.datasets[0].data = pickData(DONUT_DATA, yearKey, unitKey, 4);
+      donutChart.update();
+    };
+
+    donutYearEl?.addEventListener('change', updateDonut);
+    donutUnitEl?.addEventListener('change', updateDonut);
   }
 
-  barYearEl?.addEventListener('change', updateBar);
-  barUnitEl?.addEventListener('change', updateBar);
-}
+  // init bar
+  const barCtx = document.getElementById('landingBar');
+  let barChart = null;
+
+  const splitLabel = (value) => Array.isArray(value) ? value : String(value ?? '');
+
+  if(barCtx && window.Chart){
+    barChart = new Chart(barCtx, {
+      type: 'bar',
+      data: {
+        labels: BAR_LABELS,
+        datasets: [{
+          label: 'Semua Tahun',
+          data: pickData(BAR_DATA, 'all', 'all', 6),
+          backgroundColor: '#F6C100',
+          borderWidth: 0,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { font: { family: 'Nunito', weight: '400', size: 14 } }
+          },
+          tooltip: { enabled: true }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              font: { family: 'Nunito', weight: '400', size: 14 }
+            }
+          },
+          x: {
+            ticks: {
+              maxRotation: 0,
+              minRotation: 0,
+              autoSkip: false,
+              padding: 6,
+              font: { family: 'Nunito', weight: '400', size: 11 },
+              callback: function (value) {
+                const raw = this.getLabelForValue(value);
+                return splitLabel(raw);
+              }
+            },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+
+    const updateBar = () => {
+      const yearKey = (barYearEl?.value || '').trim() === '' ? 'all' : String(barYearEl.value);
+      const unitKey = (barUnitEl?.value || '').trim() === '' ? 'all' : String(barUnitEl.value);
+
+      barChart.data.datasets[0].data = pickData(BAR_DATA, yearKey, unitKey, 6);
+      barChart.data.datasets[0].label = (yearKey === 'all') ? 'Semua Tahun' : yearKey;
+      barChart.update();
+    };
+
+    barYearEl?.addEventListener('change', updateBar);
+    barUnitEl?.addEventListener('change', updateBar);
+  }
+});
 </script>
 @endpush

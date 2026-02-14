@@ -172,6 +172,9 @@ class UnitController extends Controller
         return 'Rp ' . number_format($num, 0, ',', '.');
     }
 
+    // =========================
+    // ✅ UPDATED: Arsip Index (SERVER-SIDE FILTER + SEARCH + SORT + PAGINATION)
+    // =========================
     public function arsipIndex(Request $request)
     {
         $unitName = auth()->user()->name ?? 'Unit Kerja';
@@ -181,13 +184,78 @@ class UnitController extends Controller
             abort(403, 'Akun unit belum terhubung ke unit_id.');
         }
 
-        // ✅ FIX: urutkan berdasarkan updated_at (terbaru diupdate paling atas)
-        // - latest() default-nya pakai created_at
-        // - kita ganti jadi orderByDesc('updated_at')
-        $arsips = Pengadaan::with('unit')
-            ->where('unit_id', $unitId)
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id') // fallback kalau updated_at sama
+        // ✅ input dari UI (query string) - konsisten dengan PPK
+        $q      = trim((string)$request->query('q', ''));
+        $tahun  = (string)$request->query('tahun', 'Semua');
+        $status = (string)$request->query('status', 'Semua');
+
+        // (opsional) sorting nilai kontrak server-side
+        // nilai: "asc" / "desc" / "" (default)
+        $sortNilai = strtolower((string)$request->query('sort_nilai', ''));
+
+        // ✅ opsi tahun harus dari DB (biar pagination page 2 tetap konsisten)
+        $tahunOptions = Pengadaan::where('unit_id', $unitId)
+            ->whereNotNull('tahun')
+            ->select('tahun')
+            ->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
+
+        $query = Pengadaan::query()
+            ->with('unit')
+            ->where('unit_id', $unitId);
+
+        // ✅ filter status arsip
+        if ($status !== '' && $status !== 'Semua') {
+            $query->where('status_arsip', $status);
+        }
+
+        // ✅ filter tahun
+        if ($tahun !== '' && $tahun !== 'Semua') {
+            if (ctype_digit($tahun)) {
+                $query->where('tahun', (int)$tahun);
+            } else {
+                $query->where('tahun', $tahun);
+            }
+        }
+
+        // ✅ search global
+        if ($q !== '') {
+            $qLower = mb_strtolower($q);
+
+            $query->where(function ($w) use ($q, $qLower) {
+                if (ctype_digit($q)) {
+                    $w->orWhere('tahun', (int)$q)
+                      ->orWhere('id', (int)$q);
+                }
+
+                $w->orWhereRaw('LOWER(COALESCE(nama_pekerjaan, \'\')) LIKE ?', ['%' . $qLower . '%'])
+                  ->orWhereRaw('LOWER(COALESCE(id_rup, \'\')) LIKE ?', ['%' . $qLower . '%'])
+                  ->orWhereRaw('LOWER(COALESCE(jenis_pengadaan, \'\')) LIKE ?', ['%' . $qLower . '%'])
+                  ->orWhereRaw('LOWER(COALESCE(status_arsip, \'\')) LIKE ?', ['%' . $qLower . '%'])
+                  ->orWhereRaw('LOWER(COALESCE(status_pekerjaan, \'\')) LIKE ?', ['%' . $qLower . '%'])
+                  ->orWhereRaw('LOWER(COALESCE(nama_rekanan, \'\')) LIKE ?', ['%' . $qLower . '%']);
+
+                $w->orWhereRaw('CAST(COALESCE(nilai_kontrak,0) AS TEXT) LIKE ?', ['%' . $q . '%']);
+
+                $w->orWhereHas('unit', function ($u) use ($qLower) {
+                    $u->whereRaw('LOWER(COALESCE(nama, \'\')) LIKE ?', ['%' . $qLower . '%']);
+                });
+            });
+        }
+
+        // ✅ sorting
+        if (in_array($sortNilai, ['asc', 'desc'], true)) {
+            $query->orderBy('nilai_kontrak', $sortNilai);
+            $query->orderByDesc('updated_at')->orderByDesc('id');
+        } else {
+            $query->orderByDesc('updated_at')->orderByDesc('id');
+        }
+
+        $arsips = $query
             ->paginate(10)
             ->withQueryString();
 
@@ -217,7 +285,8 @@ class UnitController extends Controller
 
         $arsips->setCollection($mapped);
 
-        return view('Unit.ArsipPBJ', compact('unitName', 'arsips'));
+        // ✅ kirim tahunOptions juga (tanpa ubah konten lain)
+        return view('Unit.ArsipPBJ', compact('unitName', 'arsips', 'tahunOptions'));
     }
 
     public function arsipEdit($id)
@@ -754,8 +823,6 @@ class UnitController extends Controller
     {
         $fileFields = array_keys($this->dokumenFieldLabels());
 
-        // (opsional tapi bagus) validasi file
-        // note: kalau kamu pakai multiple, name="dokumen_kak[]" dsb, Laravel tetap detect array
         foreach ($fileFields as $field) {
             if (!$request->hasFile($field)) continue;
 
