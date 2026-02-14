@@ -312,7 +312,6 @@
 
 {{-- ✅ CSS KHUSUS MODAL DOKUMEN (HANYA LIHAT DETAIL) --}}
 <style>
-  /* maksimal 2 dokumen per baris */
   #mDocs.pbj-docs-grid{
     display:grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -322,7 +321,6 @@
     #mDocs.pbj-docs-grid{ grid-template-columns: 1fr; }
   }
 
-  /* card dokumen mirip Unit/Arsip: icon kiri, nama, tombol icon kanan */
   #mDocs .pbj-doc-card{
     border:1px solid rgba(0,0,0,.08);
     background:#fff;
@@ -358,8 +356,6 @@
     font-weight:700;
     line-height:1.3;
   }
-
-  /* ✅ tombol aksi: ICON saja (eye) */
   #mDocs .pbj-doc-act{
     width:40px;
     height:40px;
@@ -380,9 +376,9 @@
   /**
    * ==========================================
    * ✅ STATISTIKA REALTIME (PUBLIK) — CONNECT KE Home/pbj
-   * - Dropdown Tahun: "Semua Tahun"
-   * - Dropdown Unit: dari units.nama (yang dipakai di pengadaan publik)
-   * - Hapus dummy data (diganti JSON dari DB)
+   * ✅ Dropdown Unit = SEMUA unit dari tabel units (SAMA seperti Home/pbj)
+   * - Klik donut => buka Home/pbj filter status_pekerjaan (+tahun/+unit)
+   * - Klik bar   => buka Home/pbj filter q=metode (+tahun/+unit)
    * ==========================================
    */
 
@@ -398,21 +394,14 @@
     ->values()
     ->all();
 
-  // Unit options dari DB (publik) => ikut Home/pbj: hanya unit yang muncul pada pengadaan publik
-  $unitIdsPublik = \App\Models\Pengadaan::where('status_arsip','Publik')
-    ->whereNotNull('unit_id')
-    ->select('unit_id')->distinct()
-    ->pluck('unit_id')
-    ->all();
-
-  $statUnitOptions = \App\Models\Unit::whereIn('id', $unitIdsPublik)
+  // ✅ Unit options dari DB (SEMUA units) — FINAL
+  $statUnitOptions = \App\Models\Unit::query()
     ->orderBy('nama')
     ->get(['id','nama'])
-    ->map(fn($u)=>['id'=>$u->id,'nama'=>$u->nama])
+    ->map(fn($u)=>['id'=>(int)$u->id,'nama'=>(string)$u->nama])
     ->values()
     ->all();
 
-  // Kategori metode pengadaan (bar)
   $METHOD_KEYS = [
     'Pengadaan Langsung',
     'Penunjukan Langsung',
@@ -442,8 +431,8 @@
 
   $makeKey = fn($year) => $year === null ? 'all' : (string)(int)$year;
 
-  $donutData = []; // yearKey => unitKey => [statusCounts]
-  $barData   = []; // yearKey => unitKey => [methodCounts]
+  $donutData = [];
+  $barData   = [];
 
   $yearsForBuild = array_merge([null], $statYearOptions); // null = all
   $unitsForBuild = array_merge([null], array_map(fn($x)=>$x['id'], $statUnitOptions)); // null = all
@@ -460,8 +449,8 @@
       if($y !== null)   $q->where('tahun', (int)$y);
       if($uid !== null) $q->where('unit_id', (int)$uid);
 
-      // donut counts by status_pekerjaan
-      $statusCounts = $q->clone()
+      // ✅ FIX: clone yang benar (anti error)
+      $statusCounts = (clone $q)
         ->selectRaw('status_pekerjaan as s, COUNT(*) as c')
         ->groupBy('status_pekerjaan')
         ->pluck('c','s')
@@ -471,8 +460,7 @@
         return (int)($statusCounts[$st] ?? 0);
       }, $statusList);
 
-      // bar counts by jenis_pengadaan (normalize ke 6 bucket)
-      $jenisCounts = $q->clone()
+      $jenisCounts = (clone $q)
         ->selectRaw('jenis_pengadaan as j, COUNT(*) as c')
         ->groupBy('jenis_pengadaan')
         ->pluck('c','j')
@@ -499,7 +487,7 @@
     </div>
 
     <div class="stats-2col">
-      @include('Partials.statistika-donut', ['title' => 'Status Arsip', 'donutId' => 'landingDonut'])
+      @include('Partials.statistika-donut', ['title' => 'Status Pekerjaan', 'donutId' => 'landingDonut'])
       @include('Partials.statistika-bar',   ['title' => 'Metode Pengadaan', 'barId' => 'landingBar'])
     </div>
   </div>
@@ -549,7 +537,6 @@ function openDetailModal(payload){
   const modal = document.getElementById('detailModal');
   if(!modal) return;
 
-  // isi data
   document.getElementById('mTitle').textContent   = payload?.title   ?? '-';
   document.getElementById('mUnit').textContent    = payload?.unit    ?? '-';
   document.getElementById('mTahun').textContent   = payload?.tahun   ?? '-';
@@ -562,14 +549,11 @@ function openDetailModal(payload){
   document.getElementById('mHps').textContent     = payload?.hps     ?? '-';
   document.getElementById('mKontrak').textContent = payload?.kontrak ?? '-';
 
-  // dokumen
   const docsWrap  = document.getElementById('mDocs');
   const docsEmpty = document.getElementById('mDocsEmpty');
   docsWrap.innerHTML = '';
 
-  const toViewerUrl = (storageUrl) => {
-    return `/file-viewer?file=${encodeURIComponent(storageUrl)}&mode=public`;
-  };
+  const toViewerUrl = (storageUrl) => `/file-viewer?file=${encodeURIComponent(storageUrl)}&mode=public`;
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
@@ -612,7 +596,6 @@ function openDetailModal(payload){
 
   docsEmpty.style.display = totalDocs ? 'none' : 'block';
 
-  // kolom E
   const note = (payload?.docnote || '').trim();
   const noteDivider = document.getElementById('mDocNoteDivider');
   const noteBox = document.getElementById('mDocNoteBox');
@@ -661,71 +644,25 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 /* =========================
-   ✅ COUNT-UP (SAMA SEPERTI PPK)
-   (Jalan kalau ada elemen .js-count)
+   ✅ STATISTIKA REALTIME (DB) + CONNECT KE Home/pbj
 ========================= */
-const CountFX = (() => {
-  const DEFAULT_DURATION = 900;
+const PBJ_BASE_URL = @json(route('home.pbj'));
 
-  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-
-  const parseNumber = (txt) => {
-    const s = String(txt ?? '').replace(/[^\d]/g, '');
-    return Number(s || 0);
-  };
-
-  const formatNumber = (n) => {
-    return Math.round(n).toLocaleString('id-ID');
-  };
-
-  const setText = (el, n) => {
-    const prefix = el?.dataset?.prefix || '';
-    const suffix = el?.dataset?.suffix || '';
-    el.textContent = `${prefix}${formatNumber(n)}${suffix}`;
-  };
-
-  const playOnceWhenVisible = (list) => {
-    if(!list || !list.length) return;
-
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if(!e.isIntersecting) return;
-        const el = e.target;
-        io.unobserve(el);
-
-        const to = Number(el.dataset.count || 0);
-        const start = performance.now();
-
-        const tick = (now) => {
-          const t = Math.min(1, (now - start) / DEFAULT_DURATION);
-          const p = easeOutCubic(t);
-          const cur = to * p;
-          setText(el, cur);
-          if(t < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      });
-    }, { threshold: 0.25 });
-
-    list.forEach(el => io.observe(el));
-  };
-
-  return { playOnceWhenVisible };
-})();
-document.addEventListener('DOMContentLoaded', () => {
-  CountFX.playOnceWhenVisible(document.querySelectorAll('.js-count'));
-});
-
-/* =========================
-   ✅ STATISTIKA REALTIME (DB)
-   - Dropdown Tahun => "Semua Tahun"
-   - Dropdown Unit => ikut Home/pbj (units.nama)
-   - Hapus dummy data
-========================= */
 const DONUT_DATA = @json($donutData);
 const BAR_DATA   = @json($barData);
 const YEAR_OPTIONS = @json($statYearOptions);
 const UNIT_OPTIONS = @json($statUnitOptions);
+
+const STATUS_LABELS = ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'];
+
+const METHOD_LABELS = [
+  'Pengadaan Langsung',
+  'Penunjukan Langsung',
+  'E-Purchasing/E-Catalog',
+  'Tender Terbatas',
+  'Tender Terbuka',
+  'Swakelola'
+];
 
 const BAR_LABELS = [
   ["Pengadaan","Langsung"],
@@ -747,42 +684,56 @@ const pickData = (obj, yearKey, unitKey, fallbackLen) => {
 const ensureOptions = (selectEl, items, type) => {
   if(!selectEl) return;
 
-  // build options
   let html = '';
   if(type === 'year'){
     html += `<option value="">Semua Tahun</option>`;
-    (items || []).forEach(y => {
-      html += `<option value="${String(y)}">${String(y)}</option>`;
-    });
+    (items || []).forEach(y => { html += `<option value="${String(y)}">${String(y)}</option>`; });
   }else if(type === 'unit'){
     html += `<option value="">Semua Unit</option>`;
-    (items || []).forEach(u => {
-      html += `<option value="${String(u.id)}">${String(u.nama)}</option>`;
-    });
+    (items || []).forEach(u => { html += `<option value="${String(u.id)}">${String(u.nama)}</option>`; });
   }
   selectEl.innerHTML = html;
 };
 
+const getYearUnitFilters = (yearEl, unitEl) => {
+  const yearVal = (yearEl?.value || '').trim();
+  const unitVal = (unitEl?.value || '').trim();
+  return {
+    tahun: yearVal ? yearVal : '',
+    unit_id: unitVal ? unitVal : '',
+  };
+};
+
+const goToPBJ = (params) => {
+  const url = new URL(PBJ_BASE_URL, window.location.origin);
+  Object.keys(params || {}).forEach(k => {
+    const v = params[k];
+    if(v !== undefined && v !== null && String(v).trim() !== ''){
+      url.searchParams.set(k, String(v));
+    }
+  });
+  url.searchParams.delete('page');
+  window.location.href = url.toString();
+};
+
 document.addEventListener('DOMContentLoaded', () => {
-  // ids dari partial (umumnya)
   const donutYearEl = document.getElementById('donutYear');
   const donutUnitEl = document.getElementById('donutUnit');
   const barYearEl   = document.getElementById('barYear');
   const barUnitEl   = document.getElementById('barUnit');
 
-  // ✅ paksa dropdown sesuai DB (tanpa perlu ubah partial)
+  // ✅ inject dropdown options: Tahun + SEMUA unit dari tabel units
   ensureOptions(donutYearEl, YEAR_OPTIONS, 'year');
   ensureOptions(barYearEl,   YEAR_OPTIONS, 'year');
   ensureOptions(donutUnitEl, UNIT_OPTIONS, 'unit');
   ensureOptions(barUnitEl,   UNIT_OPTIONS, 'unit');
 
-  // default: Semua Tahun + Semua Unit
   if(donutYearEl) donutYearEl.value = '';
   if(barYearEl)   barYearEl.value = '';
   if(donutUnitEl) donutUnitEl.value = '';
   if(barUnitEl)   barUnitEl.value = '';
 
-  // init donut
+  // DONUT
   const donutCtx = document.getElementById('landingDonut');
   let donutChart = null;
 
@@ -790,7 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
     donutChart = new Chart(donutCtx, {
       type: 'doughnut',
       data: {
-        labels: ['Perencanaan','Pemilihan','Pelaksanaan','Selesai'],
+        labels: STATUS_LABELS,
         datasets: [{
           data: pickData(DONUT_DATA, 'all', 'all', 4),
           backgroundColor: ['#0B4A5E', '#111827', '#F6C100', '#D6A357'],
@@ -814,6 +765,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           },
           tooltip: { enabled: true }
+        },
+        onClick: function(evt, elements){
+          if(!elements || !elements.length) return;
+
+          const idx = elements[0].index;
+          const status = STATUS_LABELS[idx] || '';
+          if(!status) return;
+
+          const f = getYearUnitFilters(donutYearEl, donutUnitEl);
+          goToPBJ({
+            tahun: f.tahun,
+            unit_id: f.unit_id,
+            status_pekerjaan: status
+          });
         }
       }
     });
@@ -829,7 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
     donutUnitEl?.addEventListener('change', updateDonut);
   }
 
-  // init bar
+  // BAR
   const barCtx = document.getElementById('landingBar');
   let barChart = null;
 
@@ -880,6 +845,20 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             grid: { display: false }
           }
+        },
+        onClick: function(evt, elements){
+          if(!elements || !elements.length) return;
+
+          const idx = elements[0].index;
+          const method = METHOD_LABELS[idx] || '';
+          if(!method) return;
+
+          const f = getYearUnitFilters(barYearEl, barUnitEl);
+          goToPBJ({
+            tahun: f.tahun,
+            unit_id: f.unit_id,
+            q: method
+          });
         }
       }
     });

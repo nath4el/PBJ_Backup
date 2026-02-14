@@ -7,18 +7,10 @@
     </a>
 
     <nav class="nav-links">
-      <a href="{{ 
-    auth()->check() 
-        ? match (strtolower(auth()->user()->role ?? '')) {
-            'ppk' => route('ppk.dashboard'),
-            'unit' => route('unit.dashboard'),
-            default => route('home'),
-        } 
-        : route('home')
-}}" 
-   class="nav-link {{ request()->routeIs(['home', 'ppk.dashboard', 'unit.dashboard']) ? : '' }}">
-    Dasbor
-</a>
+      <a href="{{ route('home.dashboard') }}"
+         class=class="nav-link {{ request()->routeIs(['ppk.dashboard','unit.dashboard']) ? 'active' : '' }}">
+        Dasbor
+      </a>
 
       <a href="{{ route('home') }}#regulasi" class="nav-link">Regulasi</a>
 

@@ -15,21 +15,22 @@
       use App\Models\Pengadaan;
       use App\Models\Unit;
       use Illuminate\Support\Str;
+      use Illuminate\Support\Facades\Schema;
 
       // =========================
       // ✅ FILTER (SAMA KONSEP DENGAN PPK/ArsipPBJ)
-      // Bedanya: HOME hanya tampilkan arsip PUBLIK
-      // Dan "status" di HOME = status_pekerjaan
+      // HOME: hanya tampilkan arsip PUBLIK
+      // ✅ Status = STATUS PEKERJAJAAN
       // =========================
-      $q = request('q');
+      $q      = request('q');
       $unitId = request('unit_id');
       $statusPekerjaan = request('status_pekerjaan');
-      $tahun = request('tahun');
+      $tahun  = request('tahun');
 
       // opsi status pekerjaan (samakan dengan PPK)
       $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 
-      // ✅ Unit dropdown dari DB (SEMUA unit yang ada di tabel units) -> sama seperti PPK/ArsipPBJ
+      // ✅ Unit dropdown dari DB
       $unitOptions = Unit::orderBy('nama')->get();
 
       // ✅ Tahun dropdown dari DB (HANYA yang muncul di pengadaans publik)
@@ -43,19 +44,58 @@
         ->values();
 
       // =========================
-      // ✅ QUERY ARSIP (REALTIME + URUT SAMA PPK)
+      // ✅ QUERY ARSIP (SERVER-SIDE + PAGINATION 10)
       // paling atas = yang TERUPDATE
       // =========================
       $arsipQuery = Pengadaan::with('unit')
         ->where('status_arsip', 'Publik');
 
+      /**
+       * ✅ FIX SEARCH:
+       * - bisa cari "2025" (kolom tahun)
+       * - bisa cari nama UNIT (relasi unit.nama)
+       * - bisa cari nama file/dokumen (kolom dokumen/file/lampiran, termasuk json/path)
+       * - multi-kata (AND antar term)
+       */
       if($q){
-        $qq = trim($q);
-        $arsipQuery->where(function($sub) use ($qq){
-          $sub->where('nama_pekerjaan','like',"%{$qq}%")
-              ->orWhere('id_rup','like',"%{$qq}%")
-              ->orWhere('nama_rekanan','like',"%{$qq}%");
-        });
+        $qqRaw = trim((string)$q);
+
+        $terms = preg_split('/\s+/', $qqRaw, -1, PREG_SPLIT_NO_EMPTY);
+        $terms = array_values(array_filter(array_map(fn($t) => trim($t), $terms)));
+
+        // ambil semua kolom pengadaans yang mengandung dokumen/file/lampiran
+        $table = (new Pengadaan)->getTable();
+        $allCols = (Schema::hasTable($table)) ? Schema::getColumnListing($table) : [];
+
+        $docCols = array_values(array_filter($allCols, function($col){
+          $lk = strtolower((string)$col);
+          if(in_array($col, ['dokumen_tidak_dipersyaratkan','dokumen_tidak_dipersyaratkan_json'], true)) return false;
+          return (str_contains($lk,'dokumen') || str_contains($lk,'file') || str_contains($lk,'lampiran'));
+        }));
+
+        foreach($terms as $term){
+          $arsipQuery->where(function($sub) use ($term, $docCols){
+            $like = "%{$term}%";
+
+            // kolom utama
+            $sub->where('nama_pekerjaan','like',$like)
+                ->orWhere('id_rup','like',$like)
+                ->orWhere('nama_rekanan','like',$like)
+                ->orWhere('jenis_pengadaan','like',$like)
+                ->orWhere('status_pekerjaan','like',$like)
+                ->orWhere('tahun','like',$like);
+
+            // ✅ FIX: unit hanya punya kolom "nama" (hapus "name")
+            $sub->orWhereHas('unit', function($u) use ($like){
+              $u->where('nama','like',$like);
+            });
+
+            // cari di semua kolom dokumen/file/lampiran (json/path juga kena)
+            foreach($docCols as $c){
+              $sub->orWhere($c, 'like', $like);
+            }
+          });
+        }
       }
 
       if($unitId && is_numeric($unitId)){
@@ -70,15 +110,18 @@
         $arsipQuery->where('tahun', (int)$tahun);
       }
 
-      // ✅ urutan realtime sama seperti Home/IndexContent & PPK (terbaru di atas)
+      // ✅ pagination 10 terbaru + query string kebawa saat pindah halaman
       $arsips = $arsipQuery
         ->orderByDesc('updated_at')
         ->orderByDesc('id')
-        ->get();
+        ->paginate(10);
 
-      $totalRows = $arsips->count();
+      // query string yang dipertahankan (samakan konsep PPK)
+      $qs = request()->except('page');
 
-      // helper rupiah (samakan tampilan)
+      $totalRows = $arsips->total();
+
+      // helper rupiah
       $rupiah = function($v){
         if($v === null || $v === '') return '-';
         if(is_string($v) && Str::contains($v, 'Rp')) return $v;
@@ -98,7 +141,6 @@
 
       /**
        * ✅ Builder dokumen untuk modal (SAMA PERSIS dengan Home/IndexContent)
-       * Output: object per-field -> list file
        */
       function buildDokumenListForHome($pengadaan){
         if(!$pengadaan) return [];
@@ -177,37 +219,17 @@
 
         return is_string($eVal) ? $eVal : '';
       }
-
-      // ✅ payload untuk modal (match IndexContent)
-      $payloadRows = $arsips->map(function($a) use ($rupiah){
-        $unitName = $a->unit?->nama ?? ($a->unit?->name ?? '-');
-
-        return [
-          'title'   => $a->nama_pekerjaan ?? '-',
-          'unit'    => $unitName,
-          'tahun'   => $a->tahun ?? '-',
-          'idrup'   => $a->id_rup ?? '-',
-          'status'  => $a->status_pekerjaan ?? '-',
-          'rekanan' => $a->nama_rekanan ?? '-',
-          'jenis'   => $a->jenis_pengadaan ?? '-',
-          'pagu'    => $rupiah($a->pagu_anggaran),
-          'hps'     => $rupiah($a->hps),
-          'kontrak' => $rupiah($a->nilai_kontrak),
-          'docnote' => buildDocNoteForHome($a),
-          'docs'    => buildDokumenListForHome($a),
-        ];
-      })->values()->all();
     @endphp
 
     {{-- FILTER BAR --}}
-    <form class="pbj-filters" method="GET" action="{{ url()->current() }}">
+    <form class="pbj-filters" id="pbjFilterForm" method="GET" action="{{ url()->current() }}">
       <div class="pbj-search">
         <i class="bi bi-search"></i>
-        <input type="text" name="q" value="{{ $q ?? '' }}" placeholder="Cari..." />
+        <input type="text" id="pbjSearch" name="q" value="{{ $q ?? '' }}" placeholder="Cari..." />
       </div>
 
-      {{-- ✅ Unit dari DB (SEMUA units.nama) --}}
-      <select class="pbj-select" name="unit_id" onchange="this.form.submit()">
+      {{-- ✅ Unit --}}
+      <select class="pbj-select" id="pbjUnit" name="unit_id">
         <option value="" {{ !$unitId ? 'selected' : '' }}>Semua Unit</option>
         @foreach($unitOptions as $u)
           <option value="{{ $u->id }}" {{ (string)$unitId === (string)$u->id ? 'selected' : '' }}>
@@ -216,8 +238,8 @@
         @endforeach
       </select>
 
-      {{-- ✅ Status di HOME = Status Pekerjaan --}}
-      <select class="pbj-select" name="status_pekerjaan" onchange="this.form.submit()">
+      {{-- ✅ Status = Status Pekerjaan --}}
+      <select class="pbj-select" id="pbjStatusPekerjaan" name="status_pekerjaan">
         <option value="" {{ !$statusPekerjaan ? 'selected' : '' }}>Semua Status</option>
         @foreach($statusPekerjaanOptions as $sp)
           <option value="{{ $sp }}" {{ (string)$statusPekerjaan === (string)$sp ? 'selected' : '' }}>
@@ -226,8 +248,8 @@
         @endforeach
       </select>
 
-      {{-- ✅ Tahun dari DB --}}
-      <select class="pbj-select" name="tahun" onchange="this.form.submit()">
+      {{-- ✅ Tahun --}}
+      <select class="pbj-select" id="pbjYear" name="tahun">
         <option value="" {{ !$tahun ? 'selected' : '' }}>Semua Tahun</option>
         @foreach($tahunOptions as $t)
           <option value="{{ $t }}" {{ (string)$tahun === (string)$t ? 'selected' : '' }}>
@@ -237,8 +259,7 @@
       </select>
 
       <div class="pbj-actions">
-        {{-- ✅ refresh = reset filter --}}
-        <a class="pbj-icon-btn" href="{{ url()->current() }}" title="Refresh" style="display:inline-flex; align-items:center; justify-content:center;">
+        <a class="pbj-icon-btn" id="pbjRefreshBtn" href="{{ url()->current() }}" title="Refresh" style="display:inline-flex; align-items:center; justify-content:center;">
           <i class="bi bi-arrow-clockwise"></i>
         </a>
       </div>
@@ -267,18 +288,34 @@
         </thead>
 
         <tbody>
-          @foreach($arsips as $idx => $a)
+          @foreach($arsips as $a)
             @php
-              $payload = $payloadRows[$idx] ?? [];
               $nilaiText = $rupiah($a->nilai_kontrak ?? null);
+              $unitName = $a->unit?->nama ?? '-';
+
+              $payload = [
+                'title'   => $a->nama_pekerjaan ?? '-',
+                'unit'    => $unitName,
+                'tahun'   => $a->tahun ?? '-',
+                'idrup'   => $a->id_rup ?? '-',
+                'status'  => $a->status_pekerjaan ?? '-',
+                'rekanan' => $a->nama_rekanan ?? '-',
+                'jenis'   => $a->jenis_pengadaan ?? '-',
+                'pagu'    => $rupiah($a->pagu_anggaran),
+                'hps'     => $rupiah($a->hps),
+                'kontrak' => $rupiah($a->nilai_kontrak),
+                'docnote' => buildDocNoteForHome($a),
+                'docs'    => buildDokumenListForHome($a),
+              ];
             @endphp
+
             <tr>
               <td>{{ $a->tahun ?? '-' }}</td>
+
               <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                 {{ $a->unit?->nama ?? '-' }}
               </td>
 
-              {{-- ✅ TIDAK MENAMPILKAN ID RUP di bawah nama pekerjaan --}}
               <td class="pbj-job">
                 <div class="pbj-job-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                   {{ $a->nama_pekerjaan ?? '-' }}
@@ -315,20 +352,66 @@
         </tbody>
       </table>
 
-      {{-- PAGINATION BAWAH --}}
+      {{-- ✅ PAGINATION BAWAH (ANGKA 1 2 3 …) — SAMA KONSEP PPK/ArsipPBJ --}}
       <div class="pbj-foot">
         <div class="pbj-foot-left" id="pbjFootText">
-          Halaman 1 dari 1 • Menampilkan {{ $totalRows }} dari {{ $totalRows }} data
+          Halaman {{ $arsips->currentPage() }} dari {{ $arsips->lastPage() }}
+          • Menampilkan {{ $arsips->count() ? $arsips->firstItem() : 0 }}–{{ $arsips->count() ? $arsips->lastItem() : 0 }}
+          dari {{ $arsips->total() }} data
         </div>
 
         <div class="pbj-pager">
-          <button class="pbj-page-btn" type="button" disabled>
+          @php
+            $current = $arsips->currentPage();
+            $last    = $arsips->lastPage();
+            $start   = max(1, $current - 2);
+            $end     = min($last, $current + 2);
+
+            $prevHref = $arsips->onFirstPage()
+              ? '#'
+              : $arsips->appends($qs)->url($current - 1);
+
+            $nextHref = $arsips->hasMorePages()
+              ? $arsips->appends($qs)->url($current + 1)
+              : '#';
+          @endphp
+
+          <a class="pbj-page-btn {{ $arsips->onFirstPage() ? 'is-disabled' : '' }}"
+             href="{{ $prevHref }}"
+             aria-disabled="{{ $arsips->onFirstPage() ? 'true' : 'false' }}"
+             @if($arsips->onFirstPage()) onclick="return false;" @endif
+          >
             <i class="bi bi-chevron-left"></i>
-          </button>
-          <button class="pbj-page-num is-active" type="button">1</button>
-          <button class="pbj-page-btn" type="button" disabled>
+          </a>
+
+          @if($start > 1)
+            <a class="pbj-page-btn" href="{{ $arsips->appends($qs)->url(1) }}">1</a>
+            @if($start > 2)
+              <span class="pbj-page-btn is-ellipsis" aria-hidden="true">…</span>
+            @endif
+          @endif
+
+          @for($i = $start; $i <= $end; $i++)
+            <a class="pbj-page-btn {{ $i === $current ? 'is-active' : '' }}"
+               href="{{ $arsips->appends($qs)->url($i) }}">
+              {{ $i }}
+            </a>
+          @endfor
+
+          @if($end < $last)
+            @if($end < $last - 1)
+              <span class="pbj-page-btn is-ellipsis" aria-hidden="true">…</span>
+            @endif
+            <a class="pbj-page-btn" href="{{ $arsips->appends($qs)->url($last) }}">{{ $last }}</a>
+          @endif
+
+          <a class="pbj-page-btn {{ $arsips->hasMorePages() ? '' : 'is-disabled' }}"
+             href="{{ $nextHref }}"
+             aria-disabled="{{ $arsips->hasMorePages() ? 'false' : 'true' }}"
+             @if(!$arsips->hasMorePages()) onclick="return false;" @endif
+          >
             <i class="bi bi-chevron-right"></i>
-          </button>
+          </a>
         </div>
       </div>
     </div>
@@ -419,14 +502,12 @@
 
       <div class="pbj-section-title">Dokumen Pengadaan</div>
 
-      {{-- ✅ 2 kolom max + tombol hanya ICON (eye) --}}
       <div class="pbj-docs-grid" id="mDocs"></div>
 
       <div id="mDocsEmpty" style="margin-top:10px;opacity:.85;display:none;">
         Tidak ada dokumen yang diupload.
       </div>
 
-      {{-- ✅ KOLOM E --}}
       <div class="pbj-divider" id="mDocNoteDivider" style="display:none;"></div>
       <div id="mDocNoteBox" style="display:none;">
         <div class="pbj-section-title">Dokumen tidak dipersyaratkan</div>
@@ -437,16 +518,9 @@
   </div>
 </div>
 
-{{-- ✅ CSS KHUSUS MODAL DOKUMEN (SAMA PERSIS Home/IndexContent) --}}
 <style>
-  #mDocs.pbj-docs-grid{
-    display:grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap:12px;
-  }
-  @media (max-width: 900px){
-    #mDocs.pbj-docs-grid{ grid-template-columns: 1fr; }
-  }
+  #mDocs.pbj-docs-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+  @media (max-width: 900px){ #mDocs.pbj-docs-grid{ grid-template-columns: 1fr; } }
 
   #mDocs .pbj-doc-card{
     border:1px solid rgba(0,0,0,.08);
@@ -458,51 +532,73 @@
     justify-content:space-between;
     gap:12px;
   }
-  #mDocs .pbj-doc-left{
-    display:flex;
-    align-items:center;
-    gap:12px;
-    min-width:0;
-    flex:1;
-  }
+  #mDocs .pbj-doc-left{ display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
   #mDocs .pbj-doc-ic{
-    width:44px;
-    height:44px;
-    border-radius:16px;
-    display:grid;
-    place-items:center;
-    background:#f8fbfd;
-    border:1px solid rgba(0,0,0,.06);
-    flex:0 0 auto;
+    width:44px;height:44px;border-radius:16px;display:grid;place-items:center;
+    background:#f8fbfd;border:1px solid rgba(0,0,0,.06);flex:0 0 auto;
   }
-  #mDocs .pbj-doc-name{
-    min-width:0;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    font-weight:700;
-    line-height:1.3;
-  }
+  #mDocs .pbj-doc-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; line-height:1.3; }
   #mDocs .pbj-doc-act{
-    width:40px;
-    height:40px;
-    border-radius:14px;
-    display:grid;
-    place-items:center;
-    background:#f8fbfd;
-    border:1px solid rgba(0,0,0,.08);
-    color:#0f172a;
-    text-decoration:none;
-    flex:0 0 auto;
+    width:40px;height:40px;border-radius:14px;display:grid;place-items:center;
+    background:#f8fbfd;border:1px solid rgba(0,0,0,.08);color:#0f172a;text-decoration:none;flex:0 0 auto;
   }
   #mDocs .pbj-doc-act i{ font-size:16px; line-height:1; display:block; }
   #mDocs .pbj-doc-act:hover{ background:#eef6f8; }
+
+  /* pagination */
+  .pbj-page-btn.is-disabled{ opacity:.5; pointer-events:none; cursor:not-allowed; }
+  .pbj-page-btn.is-ellipsis{ pointer-events:none; }
+
+  .pbj-pager{ display:flex; gap:10px; align-items:center; }
+
+  .pbj-page-btn{
+    min-width:44px;
+    height:44px;
+    padding:0 14px;
+    border-radius:14px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid rgba(15, 23, 42, .14);
+    background:#fff;
+    color:#0f172a;
+    text-decoration:none;
+    font-weight:700;
+    transition: all .15s ease;
+  }
+
+  .pbj-page-btn:hover{ background:#f3f6f9; }
+
+  .pbj-page-btn.is-active{
+    background:#0b4f6c;
+    border-color:#0b4f6c;
+    color:#fff;
+    box-shadow:0 8px 18px rgba(11, 79, 108, .18);
+  }
+  .pbj-page-btn.is-active:hover{
+    background:#0a465f;
+    border-color:#0a465f;
+  }
+
+  .pbj-page-btn.is-disabled{
+    opacity:.5;
+    pointer-events:none;
+    cursor:not-allowed;
+  }
+
+  .pbj-page-btn.is-ellipsis{
+    border-color:transparent;
+    background:transparent;
+    min-width:auto;
+    padding:0 6px;
+    box-shadow:none;
+  }
 </style>
 @endsection
 
 @push('scripts')
 <script>
-// SORT NILAI KONTRAK
+// SORT NILAI KONTRAK (client-side untuk page aktif)
 document.addEventListener('DOMContentLoaded', () => {
   const btn   = document.getElementById('sortNilaiBtn');
   const icon  = document.getElementById('sortNilaiIcon');
@@ -538,6 +634,81 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ======================
+   ✅ FILTER AUTO-REFRESH (DEBOUNCE)
+====================== */
+document.addEventListener('DOMContentLoaded', () => {
+  const baseUrl = "{{ url()->current() }}";
+
+  const searchEl   = document.getElementById('pbjSearch');
+  const unitEl     = document.getElementById('pbjUnit');
+  const statusEl   = document.getElementById('pbjStatusPekerjaan');
+  const yearEl     = document.getElementById('pbjYear');
+  const refreshBtn = document.getElementById('pbjRefreshBtn');
+  const form       = document.getElementById('pbjFilterForm');
+
+  let navTimer = null;
+
+  function buildUrlFromFilters(){
+    const url = new URL(baseUrl, window.location.origin);
+
+    const q = (searchEl ? searchEl.value : '').trim();
+    const unitId = (unitEl ? unitEl.value : '');
+    const status = (statusEl ? statusEl.value : '');
+    const tahun  = (yearEl ? yearEl.value : '');
+
+    if(q) url.searchParams.set('q', q);
+    if(unitId) url.searchParams.set('unit_id', unitId);
+    if(status) url.searchParams.set('status_pekerjaan', status);
+    if(tahun) url.searchParams.set('tahun', tahun);
+
+    url.searchParams.delete('page');
+    return url.toString();
+  }
+
+  function scheduleNavigate(){
+    clearTimeout(navTimer);
+    navTimer = setTimeout(() => {
+      const next = buildUrlFromFilters();
+      if(next !== window.location.href){
+        window.location.href = next;
+      }
+    }, 800);
+  }
+
+  if(unitEl)   unitEl.addEventListener('change', scheduleNavigate);
+  if(statusEl) statusEl.addEventListener('change', scheduleNavigate);
+  if(yearEl)   yearEl.addEventListener('change', scheduleNavigate);
+
+  if(searchEl){
+    searchEl.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.href = buildUrlFromFilters();
+        return false;
+      }
+    });
+    searchEl.addEventListener('input', scheduleNavigate);
+  }
+
+  if(form){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.href = buildUrlFromFilters();
+      return false;
+    });
+  }
+
+  if(refreshBtn){
+    refreshBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      window.location.href = baseUrl;
+    });
+  }
+});
+
+/* ======================
    MODAL (SAMA PERSIS Home/IndexContent)
 ====================== */
 function openDetailModal(payload){
@@ -560,9 +731,7 @@ function openDetailModal(payload){
   const docsEmpty = document.getElementById('mDocsEmpty');
   docsWrap.innerHTML = '';
 
-  const toViewerUrl = (storageUrl) => {
-    return `/file-viewer?file=${encodeURIComponent(storageUrl)}&mode=public`;
-  };
+  const toViewerUrl = (storageUrl) => `/file-viewer?file=${encodeURIComponent(storageUrl)}&mode=public`;
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
@@ -605,7 +774,6 @@ function openDetailModal(payload){
 
   docsEmpty.style.display = totalDocs ? 'none' : 'block';
 
-  // kolom E
   const note = (payload?.docnote || '').trim();
   const noteDivider = document.getElementById('mDocNoteDivider');
   const noteBox = document.getElementById('mDocNoteBox');

@@ -58,7 +58,13 @@ Route::view('/home', 'Home.index')->name('home');
 Route::view('/home-preview', 'Home.index')->name('home.preview');
 
 // Arsip Publik (Landing)
+// ✅ Nama route tetap "ArsipPBJ" biar navbar lama tidak error
 Route::view('/ArsipPBJ', 'Landing.pbj')->name('ArsipPBJ');
+
+// ✅ Alias "landing.pbj" TANPA bentrok URI (pakai redirect ke /ArsipPBJ)
+Route::redirect('/landing/ArsipPBJ', '/ArsipPBJ')->name('landing.pbj');
+
+// Arsip Publik (Home)
 Route::view('/home/ArsipPBJ', 'Home.pbj')->name('home.pbj');
 
 // Redirect alias lama
@@ -81,6 +87,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', function () {
         return redirect()->route('home');
     })->name('dashboard');
+
+    /**
+     * ✅✅ BARU: DASHBOARD REDIRECT BERDASARKAN ROLE
+     * Dipakai untuk link "Dasbor" di navbar Home.
+     */
+    Route::get('/home/dashboard', function () {
+        $role = strtolower(trim((string)(auth()->user()->role ?? '')));
+
+        // normalisasi nama role yang sering beda-beda
+        if (in_array($role, ['ppk', 'ppk utama', 'ppk_utama'], true)) {
+            return redirect()->route('ppk.dashboard');
+        }
+
+        if (in_array($role, ['unit', 'admin unit', 'admin_unit'], true)) {
+            return redirect()->route('unit.dashboard');
+        }
+
+        return redirect()->route('home');
+    })->name('home.dashboard');
 
     /**
      * ✅ FILE VIEWER (GLOBAL, dipakai UNIT & PPK)
@@ -184,10 +209,6 @@ Route::middleware('auth')->group(function () {
         // ✅✅ FIX UTAMA: ROUTE HAPUS ARSIP PPK (sesuai yang dipanggil Blade: /ppk/arsip/{id}/delete)
         Route::delete('/arsip/{id}/delete', [PpkController::class, 'arsipDelete'])
             ->name('arsip.delete');
-
-        // (Opsional, REST style)
-        // Route::delete('/arsip/{id}', [PpkController::class, 'arsipDestroy'])
-        //     ->name('arsip.destroy');
 
         Route::get('/pengadaan/tambah', [PpkController::class, 'pengadaanCreate'])
             ->name('pengadaan.create');
