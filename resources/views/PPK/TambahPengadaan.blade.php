@@ -109,7 +109,15 @@
     return str_contains(mb_strtolower($getUnitLabel($u)), 'ppk');
   });
 
-  $jenisPengadaanOptions = ["Tender", "E-Katalog", "Pengadaan Langsung", "Seleksi", "Penunjukan Langsung"];
+  $jenisPengadaanOptions = $jenisPengadaanOptions ?? [
+  "Pengadaan Langsung",
+  "Penunjukan Langsung",
+  "E-Purchasing / E-Catalog",
+  "Tender Terbatas",
+  "Tender Terbuka",
+  "Swakelola",
+];
+
   $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 @endphp
 
@@ -186,7 +194,6 @@
               <div class="tp-field">
                 <label class="tp-label">Tahun</label>
                 <div class="tp-control tp-dd">
-                  {{-- ✅ Native select tetap ada (buat submit + required), tapi dropdown tampil custom --}}
                   <select name="tahun" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Tahun</option>
                     @foreach($tahunOptions as $t)
@@ -199,37 +206,19 @@
 
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
-              </div>
+            </div>
 
               <div class="tp-field">
                 <label class="tp-label">Unit Kerja</label>
                 <div class="tp-control tp-dd">
-                  {{-- ✅ hanya 27 unit + 1 PPK --}}
                   <select name="unit_id" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Pilih Unit Kerja</option>
 
-                    {{-- ✅ PPK (fallback kalau belum ada row PPK di DB) --}}
-                    @if(!$hasPpkInDb)
-                      <option value="0" {{ old('unit_id') == '0' ? 'selected' : '' }}>PPK</option>
-                    @endif
-
-                    {{-- ✅ Unit dari DB (SUDAH DIFILTER hanya 27 + PPK) --}}
-                    @foreach($unitsDb as $u)
-                      @php $label = $getUnitLabel($u); @endphp
+                    @foreach($units as $u)
                       <option value="{{ $u->id }}" {{ (string)old('unit_id') === (string)$u->id ? 'selected' : '' }}>
-                        {{ $label }}
+                        {{ $u->{$unitNameCol} }}
                       </option>
                     @endforeach
-
-                    {{-- ✅ Kalau DB kosong / tidak ada yang match, pakai list resmi 27 unit sebagai tampilan --}}
-                    @if($unitsDb->isEmpty())
-                      <option value="0" {{ old('unit_id') == '0' ? 'selected' : '' }}>PPK</option>
-                      @foreach($unitNamesFull as $name)
-                        <option value="{{ $name }}" {{ old('unit_id') == $name ? 'selected' : '' }}>
-                          {{ $name }}
-                        </option>
-                      @endforeach
-                    @endif
                   </select>
 
                   <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
@@ -237,13 +226,14 @@
 
                   <i class="bi bi-chevron-down tp-icon"></i>
                 </div>
-              </div>
+            </div>
 
-              <div class="tp-field tp-full">
+            <div class="tp-field tp-full">
                 <label class="tp-label">Nama Pekerjaan</label>
                 <input type="text" name="nama_pekerjaan" class="tp-input" placeholder="Nama Pekerjaan" value="{{ old('nama_pekerjaan') }}" />
               </div>
 
+              {{-- ✅ BARIS BARU: ID RUP (kiri) + Jenis Pengadaan (kanan) --}}
               <div class="tp-field">
                 <label class="tp-label">ID RUP</label>
                 <input type="text" name="id_rup" class="tp-input" placeholder="RUP-xxxx-xxxx-xxx-xx" value="{{ old('id_rup') }}" />
@@ -254,9 +244,31 @@
                 <div class="tp-control tp-dd">
                   <select name="jenis_pengadaan" class="tp-select tp-select-native" required>
                     <option value="" selected disabled hidden>Pilih Jenis Pengadaan</option>
-                    @foreach($jenisPengadaanOptions as $jp)
-                      <option value="{{ $jp }}" {{ old('jenis_pengadaan') == $jp ? 'selected' : '' }}>{{ $jp }}</option>
-                    @endforeach
+
+                    {{-- ✅ value = standar dashboard, label = tampilan user --}}
+                    <option value="Tender Terbuka" {{ old('jenis_pengadaan') == 'Tender Terbuka' ? 'selected' : '' }}>
+                      Tender
+                    </option>
+
+                    <option value="E-Purchasing / E-Catalog" {{ old('jenis_pengadaan') == 'E-Purchasing / E-Catalog' ? 'selected' : '' }}>
+                      E-Katalog
+                    </option>
+
+                    <option value="Pengadaan Langsung" {{ old('jenis_pengadaan') == 'Pengadaan Langsung' ? 'selected' : '' }}>
+                      Pengadaan Langsung
+                    </option>
+
+                    <option value="Tender Terbatas" {{ old('jenis_pengadaan') == 'Tender Terbatas' ? 'selected' : '' }}>
+                      Seleksi
+                    </option>
+
+                    <option value="Penunjukan Langsung" {{ old('jenis_pengadaan') == 'Penunjukan Langsung' ? 'selected' : '' }}>
+                      Penunjukan Langsung
+                    </option>
+
+                    <option value="Swakelola" {{ old('jenis_pengadaan') == 'Swakelola' ? 'selected' : '' }}>
+                      Swakelola
+                    </option>
                   </select>
 
                   <button type="button" class="tp-dd-btn" aria-haspopup="listbox" aria-expanded="false"></button>
@@ -266,7 +278,7 @@
                 </div>
               </div>
 
-              <div class="tp-field tp-full">
+            <div class="tp-field tp-full">
                 <label class="tp-label">Status Pekerjaan</label>
                 <div class="tp-control tp-dd">
                   <select name="status_pekerjaan" class="tp-select tp-select-native" required>
@@ -283,6 +295,7 @@
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </section>

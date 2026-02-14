@@ -19,6 +19,9 @@
 
   {{-- CSS dashboard unit --}}
   <link rel="stylesheet" href="{{ asset('css/Unit.css') }}">
+
+  {{-- ✅ Excel Export (SheetJS) --}}
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 
 <body class="dash-body page-arsip">
@@ -975,6 +978,151 @@ document.addEventListener('DOMContentLoaded', function () {
   updateEditState();
   updateDeleteState();
 
+  // =========================
+  // ✅ EXPORT EXCEL (.xlsx) - sesuai Detail + nama file dokumen + dokumen tidak dipersyaratkan
+  // =========================
+  function getBasename(path){
+    if(!path) return '';
+    const s = String(path).replace(/\\/g, '/');
+    const parts = s.split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : s;
+  }
+
+  function flattenDocsForExcel(rawDocs){
+    if(!rawDocs) return { summary: '', filesOnly: '' };
+
+    let groups = [];
+    if (Array.isArray(rawDocs)) {
+      groups = [{ field: 'dokumen', items: rawDocs }];
+    } else if (typeof rawDocs === 'object') {
+      groups = Object.keys(rawDocs).map(k => ({ field: k, items: rawDocs[k] }));
+    } else {
+      return { summary: '', filesOnly: '' };
+    }
+
+    const groupSummaries = [];
+    const allFiles = [];
+
+    groups.forEach(g => {
+      const items = Array.isArray(g.items) ? g.items : [];
+      const names = [];
+
+      items.forEach(item => {
+        let url = '';
+        if (typeof item === 'string') url = item;
+        else url = item?.url || item?.path || '';
+
+        if(!url) return;
+
+        const base = getBasename(url);
+        if(base) {
+          names.push(base);
+          allFiles.push(base);
+        }
+      });
+
+      if(names.length){
+        groupSummaries.push(`${g.field}: ${names.join(', ')}`);
+      }
+    });
+
+    return {
+      summary: groupSummaries.join(' | '),
+      filesOnly: allFiles.join(', ')
+    };
+  }
+
+  function rupiahToNumber(text){
+    return parseInt(String(text || '').replace(/[^\d]/g, ''), 10) || 0;
+  }
+
+  function exportArsipToExcel(){
+    if(typeof XLSX === 'undefined'){
+      alert('Library export Excel belum termuat. Pastikan ada script xlsx (SheetJS) di <head>.');
+      return;
+    }
+
+    const rows = Array.from(document.querySelectorAll('.ap-row'));
+
+    if(rows.length === 0){
+      alert('Tidak ada data untuk diexport.');
+      return;
+    }
+
+    const data = rows.map((row, idx) => {
+      const detail = row.querySelector('.js-open-detail');
+      const year   = (row.querySelector('.ap-year') || {}).innerText || '';
+      const unit   = (row.querySelector('.ap-unit') || {}).innerText || '';
+      const job    = (row.querySelector('.ap-job')  || {}).innerText || '';
+      const moneyText = ((row.querySelector('.ap-money') || {}).innerText || '').trim();
+      const moneyNum  = rupiahToNumber(moneyText);
+
+      const statusArsip = (row.getAttribute('data-status') || '').trim();
+
+      const tahun   = detail?.dataset?.tahun || year;
+      const unitKerja = detail?.dataset?.unit || unit;
+      const pekerjaan = detail?.dataset?.title || job;
+      const idrup   = detail?.dataset?.idrup || '';
+      const statusPekerjaan = detail?.dataset?.status || '';
+      const rekanan = detail?.dataset?.rekanan || '';
+      const jenis   = detail?.dataset?.jenis || '';
+      const pagu    = detail?.dataset?.pagu || '';
+      const hps     = detail?.dataset?.hps || '';
+      const kontrak = detail?.dataset?.kontrak || moneyText;
+
+      const docnote = (detail?.dataset?.docnote || '').trim();
+
+      let docsObj = {};
+      try{
+        docsObj = detail?.dataset?.docs ? JSON.parse(detail.dataset.docs) : {};
+      }catch(e){
+        docsObj = {};
+      }
+
+      const docsFlat = flattenDocsForExcel(docsObj);
+
+      return {
+        "No": idx + 1,
+        "Tahun Anggaran": tahun,
+        "Unit Kerja": unitKerja,
+        "Nama Pekerjaan": pekerjaan,
+        "ID RUP": idrup,
+        "Status Arsip": statusArsip || '',
+        "Status Pekerjaan": statusPekerjaan,
+        "Nama Rekanan": rekanan,
+        "Jenis Pengadaan": jenis,
+        "Pagu Anggaran": pagu,
+        "HPS": hps,
+        "Nilai Kontrak (Teks)": kontrak,
+        "Nilai Kontrak (Angka)": moneyNum,
+        "Dokumen Pengadaan (Per Kolom)": docsFlat.summary,
+        "Nama File Dokumen (Gabungan)": docsFlat.filesOnly,
+        "Dokumen Tidak Dipersyaratkan": docnote
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    const colWidths = Object.keys(data[0] || {}).map((k) => {
+      const maxLen = Math.max(
+        k.length,
+        ...data.map(r => String(r[k] ?? '').length)
+      );
+      return { wch: Math.min(Math.max(12, maxLen + 2), 60) };
+    });
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Arsip PBJ');
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2,'0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const filename = `Arsip_PBJ_${stamp}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+  }
+
   if(printBtn){
     printBtn.addEventListener('click', function(){
       const modal = document.getElementById('dtModal');
@@ -984,7 +1132,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.style.overflow = '';
         modal.setAttribute('aria-hidden', 'true');
       }
-      window.print();
+      exportArsipToExcel();
     });
   }
 

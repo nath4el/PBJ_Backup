@@ -36,10 +36,12 @@ class PpkController extends Controller
 
         $defaultYear = $tahunOptions[0] ?? (int)date('Y');
 
+        // ✅ kolom nama unit fleksibel
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+            : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
-        // ✅ Samakan isi dropdown Unit dengan page PPK/ArsipPBJ (ambil dari tabel units)
+        // ✅ Dropdown Unit = dari tabel units (id + nama)
         $units = Unit::orderBy($unitNameCol, 'asc')->get(['id', $unitNameCol]);
 
         $registeredUnits = $units->pluck($unitNameCol)->values()->all();
@@ -57,7 +59,7 @@ class PpkController extends Controller
         $publik     = Pengadaan::where('status_arsip', 'Publik')->count();
         $privat     = Pengadaan::where('status_arsip', 'Privat')->count();
 
-        // ✅ Default kartu mengikuti "Semua Tahun" + "Semua Unit" (konek ke ArsipPBJ)
+        // ✅ Default kartu mengikuti "Semua Tahun" + "Semua Unit"
         $paketAll = Pengadaan::count();
         $nilaiAll = (int) Pengadaan::sum('nilai_kontrak');
 
@@ -102,9 +104,11 @@ class PpkController extends Controller
         $tahun = $request->query('tahun');
         $tahun = ($tahun === null || $tahun === '') ? null : (int)$tahun;
 
+        // ✅ prefer unit_id
         $unitId = $request->query('unit_id');
         $unitId = ($unitId === null || $unitId === '') ? null : (int)$unitId;
 
+        // ✅ backward-compat (kalau frontend lama masih kirim "unit" string)
         $rawUnit = $request->query('unit');
         if ($unitId === null && $rawUnit !== null && $rawUnit !== '' && $rawUnit !== 'Semua Unit') {
             $unitId = $this->resolveUnitId($rawUnit);
@@ -261,7 +265,7 @@ class PpkController extends Controller
                 });
             })
 
-            // ✅ SEARCH q (FIX: tanpa COALESCE "", semua pakai binding & operator yang benar)
+            // ✅ SEARCH q
             ->when($q !== '', function ($query) use ($q, $likeOp, $driver) {
                 $like = '%' . $q . '%';
 
@@ -271,7 +275,6 @@ class PpkController extends Controller
                         $w->orWhere('id', (int)$q);
                     }
 
-                    // cari ke kolom teks (case-insensitive)
                     $w->orWhere('nama_pekerjaan', $likeOp, $like)
                       ->orWhere('id_rup', $likeOp, $like)
                       ->orWhere('jenis_pengadaan', $likeOp, $like)
@@ -279,18 +282,19 @@ class PpkController extends Controller
                       ->orWhere('status_pekerjaan', $likeOp, $like)
                       ->orWhere('nama_rekanan', $likeOp, $like);
 
-                    // cari ke nilai_kontrak via cast (binding aman)
                     if ($driver === 'pgsql') {
                         $w->orWhereRaw("CAST(COALESCE(nilai_kontrak,0) AS TEXT) ILIKE ?", [$like]);
                     } else {
                         $w->orWhereRaw("CAST(COALESCE(nilai_kontrak,0) AS CHAR) LIKE ?", [$like]);
                     }
 
-                    // cari nama unit (relasi)
                     $w->orWhereHas('unit', function ($u) use ($like, $likeOp) {
                         $u->where(function ($uu) use ($like, $likeOp) {
                             if (Schema::hasColumn('units', 'nama')) {
                                 $uu->orWhere('nama', $likeOp, $like);
+                            }
+                            if (Schema::hasColumn('units', 'nama_unit')) {
+                                $uu->orWhere('nama_unit', $likeOp, $like);
                             }
                             if (Schema::hasColumn('units', 'name')) {
                                 $uu->orWhere('name', $likeOp, $like);
@@ -319,7 +323,7 @@ class PpkController extends Controller
                 'pagu_anggaran' => $this->formatRupiah($p->pagu_anggaran),
                 'hps' => $this->formatRupiah($p->hps),
                 'nama_rekanan' => $p->nama_rekanan ?? '-',
-                'unit' => $p->unit?->nama ?? ($p->unit?->name ?? '-'),
+                'unit' => $p->unit?->nama ?? ($p->unit?->nama_unit ?? ($p->unit?->name ?? '-')),
                 'dokumen' => $this->buildDokumenList($p),
                 'dokumen_tidak_dipersyaratkan' => $this->normalizeArray($p->dokumen_tidak_dipersyaratkan),
             ];
@@ -342,7 +346,8 @@ class PpkController extends Controller
         }
 
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+            : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
         $unitOptions = Unit::orderBy($unitNameCol, 'asc')
             ->pluck($unitNameCol)
@@ -369,10 +374,19 @@ class PpkController extends Controller
             $tahunOptions = [$y, $y - 1, $y - 2, $y - 3, $y - 4];
         }
 
+        // ✅ kolom nama unit fleksibel
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+            : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
-        $unitOptions = Unit::orderBy($unitNameCol, 'asc')->pluck($unitNameCol)->values()->all();
+        // ✅ kirim data unit untuk dropdown berbasis unit_id (id + nama)
+        $units = Unit::query()
+            ->select(['id', $unitNameCol])
+            ->orderBy($unitNameCol, 'asc')
+            ->get();
+
+        // ✅ tetap kirim juga versi lama (nama-nama) biar tidak memecahkan blade lama kalau masih dipakai
+        $unitOptions = $units->pluck($unitNameCol)->values()->all();
 
         $jenisPengadaanOptions = [
             "Pengadaan Langsung",
@@ -382,12 +396,15 @@ class PpkController extends Controller
             "Tender Terbuka",
             "Swakelola",
         ];
+
         $statusPekerjaanOptions = ["Perencanaan", "Pemilihan", "Pelaksanaan", "Selesai"];
 
         return view('PPK.TambahPengadaan', compact(
             'ppkName',
             'tahunOptions',
-            'unitOptions',
+            'units',
+            'unitNameCol',
+            'unitOptions', // backward-compat
             'jenisPengadaanOptions',
             'statusPekerjaanOptions'
         ));
@@ -395,9 +412,14 @@ class PpkController extends Controller
 
     public function pengadaanStore(Request $request)
     {
+        // ✅ utamakan unit_id, tapi tetap dukung unit_kerja (fallback lama) biar tidak error
         $rules = [
             'tahun' => 'required|integer|min:2000|max:' . (date('Y') + 5),
-            'unit_kerja' => 'required|string|max:255',
+
+            // baru
+            'unit_id'   => 'nullable|integer|exists:units,id',
+            // lama (fallback)
+            'unit_kerja' => 'nullable|string|max:255',
 
             'nama_pekerjaan' => 'nullable|string|max:255',
             'id_rup' => 'nullable|string|max:255',
@@ -416,9 +438,18 @@ class PpkController extends Controller
 
         $data = $request->validate($rules);
 
-        $resolvedUnitId = $this->resolveUnitId($data['unit_kerja'] ?? null);
+        // ✅ resolve unit_id: prefer unit_id, else resolve dari unit_kerja (lama)
+        $resolvedUnitId = null;
+        if (!empty($data['unit_id'])) {
+            $resolvedUnitId = (int)$data['unit_id'];
+        } elseif (!empty($data['unit_kerja'])) {
+            $resolvedUnitId = $this->resolveUnitId($data['unit_kerja']);
+        }
+
         if (!$resolvedUnitId) {
-            return redirect()->back()->withInput()->withErrors(['unit_kerja' => 'Unit kerja tidak valid / tidak ditemukan di database.']);
+            // pesan error mengikuti input yang paling mungkin dipakai
+            $key = !empty($data['unit_id']) ? 'unit_id' : 'unit_kerja';
+            return redirect()->back()->withInput()->withErrors([$key => 'Unit kerja tidak valid / tidak ditemukan di database.']);
         }
 
         $toInt = function ($v) {
@@ -499,9 +530,12 @@ class PpkController extends Controller
         }
 
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id');
+            : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
+            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
-        $unitOptions = Unit::orderBy($unitNameCol, 'asc')->pluck($unitNameCol)->values()->all();
+        // ✅ untuk dropdown edit berbasis unit_id
+        $units = Unit::query()->select(['id', $unitNameCol])->orderBy($unitNameCol, 'asc')->get();
+        $unitOptions = $units->pluck($unitNameCol)->values()->all(); // backward-compat
 
         $jenisPengadaanOptions = [
             "Pengadaan Langsung",
@@ -520,6 +554,8 @@ class PpkController extends Controller
             'pengadaan',
             'arsip',
             'tahunOptions',
+            'units',
+            'unitNameCol',
             'unitOptions',
             'jenisPengadaanOptions',
             'statusPekerjaanOptions'
@@ -532,6 +568,10 @@ class PpkController extends Controller
 
         $rules = [
             'tahun' => 'nullable|integer|min:2000|max:' . (date('Y') + 5),
+
+            // baru
+            'unit_id' => 'nullable|integer|exists:units,id',
+            // lama (fallback)
             'unit_kerja' => 'nullable|string|max:255',
 
             'nama_pekerjaan' => 'nullable|string|max:255',
@@ -561,12 +601,22 @@ class PpkController extends Controller
         try {
             if ($request->filled('tahun')) $pengadaan->tahun = (int)$data['tahun'];
 
-            if ($request->filled('unit_kerja')) {
-                $resolvedUnitId = $this->resolveUnitId($data['unit_kerja']);
+            // ✅ update unit: prefer unit_id, else unit_kerja (fallback lama)
+            if ($request->filled('unit_id') || $request->filled('unit_kerja')) {
+                $resolvedUnitId = null;
+
+                if ($request->filled('unit_id')) {
+                    $resolvedUnitId = (int)$data['unit_id'];
+                } elseif ($request->filled('unit_kerja')) {
+                    $resolvedUnitId = $this->resolveUnitId($data['unit_kerja']);
+                }
+
                 if (!$resolvedUnitId) {
                     DB::rollBack();
-                    return redirect()->back()->withInput()->withErrors(['unit_kerja' => 'Unit kerja tidak valid / tidak ditemukan di database.']);
+                    $key = $request->filled('unit_id') ? 'unit_id' : 'unit_kerja';
+                    return redirect()->back()->withInput()->withErrors([$key => 'Unit kerja tidak valid / tidak ditemukan di database.']);
                 }
+
                 $pengadaan->unit_id = (int)$resolvedUnitId;
             }
 
@@ -959,6 +1009,11 @@ class PpkController extends Controller
 
             if (Schema::hasColumn('units', 'nama')) {
                 $u = Unit::whereRaw('LOWER(nama) = ?', [mb_strtolower($raw)])->first();
+                if ($u) return (int)$u->id;
+            }
+
+            if (Schema::hasColumn('units', 'nama_unit')) {
+                $u = Unit::whereRaw('LOWER(nama_unit) = ?', [mb_strtolower($raw)])->first();
                 if ($u) return (int)$u->id;
             }
 
