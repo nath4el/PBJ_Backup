@@ -42,6 +42,17 @@
   $initialStatus = (string) request()->query('status', 'Semua');
   $initialTahun  = (string) request()->query('tahun', 'Semua');
 
+  /**
+   * ✅ FIX: sort_nilai sekarang OPSIONAL (hanya aktif kalau ada param di URL)
+   * - jika tidak ada param => mode "default" (tabel sedia kala)
+   * - jika ada param asc/desc => aktif sorting
+   */
+  $initialSortNilai = request()->query('sort_nilai'); // null jika tidak ada
+  $initialSortNilai = is_null($initialSortNilai) ? null : strtolower(trim((string)$initialSortNilai));
+  if ($initialSortNilai !== null && !in_array($initialSortNilai, ['asc','desc'], true)) {
+    $initialSortNilai = null;
+  }
+
   // ✅ normalisasi agar selected tetap jalan walau URL kirim lowercase/beda spasi
   $initialUnitNorm   = trim(mb_strtolower($initialUnit, 'UTF-8'));
   $initialStatusNorm = trim(mb_strtolower($initialStatus, 'UTF-8'));
@@ -323,7 +334,13 @@
         <div class="ap-col-center ap-nilai-sort">
           <span>Nilai Kontrak</span>
           <button type="button" id="sortNilaiBtn" class="ap-sort-btn" title="Urutkan Nilai Kontrak">
-            <i id="sortNilaiIcon" class="bi bi-sort-down-alt"></i>
+            {{-- ✅ icon: default "unsorted" kalau sort_nilai tidak ada --}}
+            <i id="sortNilaiIcon" class="bi
+              @if($initialSortNilai === 'asc') bi-sort-up
+              @elseif($initialSortNilai === 'desc') bi-sort-down-alt
+              @else bi-arrow-down-up
+              @endif
+            "></i>
           </button>
         </div>
 
@@ -823,8 +840,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // =========================
   // ✅ SERVER-SIDE FILTER NAVIGATION (debounce)
+  // ✅ + pertahankan sort_nilai dari URL saat ini (kalau ada)
   // =========================
   let navTimer = null;
+
+  function getCurrentSortNilai(){
+    try{
+      const cur = new URL(window.location.href);
+      const s = (cur.searchParams.get('sort_nilai') || '').toLowerCase();
+      return (s === 'asc' || s === 'desc') ? s : '';
+    }catch(e){
+      return '';
+    }
+  }
 
   function buildUrlFromFilters(){
     const url = new URL(baseUrl, window.location.origin);
@@ -835,10 +863,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const tahun = (yearEl ? yearEl.value : 'Semua');
 
     if(q) url.searchParams.set('q', q);
-
     if(unit && unit !== 'Semua') url.searchParams.set('unit', unit);
     if(status && status !== 'Semua') url.searchParams.set('status', status);
     if(tahun && tahun !== 'Semua') url.searchParams.set('tahun', tahun);
+
+    // ✅ pertahankan sort dari URL sekarang kalau ada
+    const sortNow = getCurrentSortNilai();
+    if(sortNow) url.searchParams.set('sort_nilai', sortNow);
 
     // ✅ reset page saat filter berubah
     url.searchParams.delete('page');
@@ -883,9 +914,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  // =========================
+  // ✅ REFRESH: reset sedia kala (hapus filter + search + sort)
+  // =========================
   if(refreshBtn){
     refreshBtn.addEventListener('click', function(){
-      window.location.href = baseUrl; // reset filter
+      // reset ke URL dasar TANPA query apapun
+      window.location.href = baseUrl;
     });
   }
 
@@ -979,8 +1014,11 @@ document.addEventListener('DOMContentLoaded', function () {
   updateDeleteState();
 
   // =========================
-  // ✅ EXPORT EXCEL (.xlsx) - sesuai Detail + nama file dokumen + dokumen tidak dipersyaratkan
+  // ✅ EXPORT EXCEL (.xlsx) - FINAL: baca SEMUA PAGE (page 1..last)
+  // Kolom sama persis seperti Detail
   // =========================
+  const lastPage = @json($arsips->lastPage());
+
   function getBasename(path){
     if(!path) return '';
     const s = String(path).replace(/\\/g, '/');
@@ -1032,43 +1070,42 @@ document.addEventListener('DOMContentLoaded', function () {
     };
   }
 
-  function rupiahToNumber(text){
-    return parseInt(String(text || '').replace(/[^\d]/g, ''), 10) || 0;
-  }
+  async function fetchRowsFromPage(page){
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', String(page));
 
-  function exportArsipToExcel(){
-    if(typeof XLSX === 'undefined'){
-      alert('Library export Excel belum termuat. Pastikan ada script xlsx (SheetJS) di <head>.');
-      return;
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'text/html' }
+    });
+
+    if(!res.ok){
+      throw new Error(`Gagal mengambil data page ${page} (${res.status}).`);
     }
 
-    const rows = Array.from(document.querySelectorAll('.ap-row'));
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
 
-    if(rows.length === 0){
-      alert('Tidak ada data untuk diexport.');
-      return;
-    }
-
-    const data = rows.map((row, idx) => {
+    return Array.from(doc.querySelectorAll('.ap-row')).map(row => {
       const detail = row.querySelector('.js-open-detail');
+
       const year   = (row.querySelector('.ap-year') || {}).innerText || '';
       const unit   = (row.querySelector('.ap-unit') || {}).innerText || '';
       const job    = (row.querySelector('.ap-job')  || {}).innerText || '';
       const moneyText = ((row.querySelector('.ap-money') || {}).innerText || '').trim();
-      const moneyNum  = rupiahToNumber(moneyText);
-
-      const statusArsip = (row.getAttribute('data-status') || '').trim();
 
       const tahun   = detail?.dataset?.tahun || year;
       const unitKerja = detail?.dataset?.unit || unit;
       const pekerjaan = detail?.dataset?.title || job;
-      const idrup   = detail?.dataset?.idrup || '';
-      const statusPekerjaan = detail?.dataset?.status || '';
-      const rekanan = detail?.dataset?.rekanan || '';
-      const jenis   = detail?.dataset?.jenis || '';
-      const pagu    = detail?.dataset?.pagu || '';
-      const hps     = detail?.dataset?.hps || '';
-      const kontrak = detail?.dataset?.kontrak || moneyText;
+
+      const idrup   = detail?.dataset?.idrup || '-';
+      const statusPekerjaan = detail?.dataset?.status || '-';
+      const rekanan = detail?.dataset?.rekanan || '-';
+      const jenis   = detail?.dataset?.jenis || '-';
+      const pagu    = detail?.dataset?.pagu || '-';
+      const hps     = detail?.dataset?.hps || '-';
+      const kontrak = detail?.dataset?.kontrak || moneyText || '-';
 
       const docnote = (detail?.dataset?.docnote || '').trim();
 
@@ -1080,35 +1117,50 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       const docsFlat = flattenDocsForExcel(docsObj);
+      const dokumenPengadaan = (docsFlat.filesOnly || docsFlat.summary || '').trim() || '-';
 
       return {
-        "No": idx + 1,
-        "Tahun Anggaran": tahun,
-        "Unit Kerja": unitKerja,
         "Nama Pekerjaan": pekerjaan,
+        "Unit Kerja": unitKerja,
+        "Tahun Anggaran": tahun,
         "ID RUP": idrup,
-        "Status Arsip": statusArsip || '',
         "Status Pekerjaan": statusPekerjaan,
         "Nama Rekanan": rekanan,
         "Jenis Pengadaan": jenis,
         "Pagu Anggaran": pagu,
-        "HPS": hps,
-        "Nilai Kontrak (Teks)": kontrak,
-        "Nilai Kontrak (Angka)": moneyNum,
-        "Dokumen Pengadaan (Per Kolom)": docsFlat.summary,
-        "Nama File Dokumen (Gabungan)": docsFlat.filesOnly,
-        "Dokumen Tidak Dipersyaratkan": docnote
+        "HPs": hps,
+        "Nilai Kontrak": kontrak,
+        "Dokumen Pengadaan": dokumenPengadaan,
+        "Dokumen tidak dipersyaratkan": docnote || '-',
       };
     });
+  }
 
-    const ws = XLSX.utils.json_to_sheet(data);
+  async function exportArsipToExcel(){
+    if(typeof XLSX === 'undefined'){
+      alert('Library export Excel belum termuat. Pastikan ada script xlsx (SheetJS) di <head>.');
+      return;
+    }
 
-    const colWidths = Object.keys(data[0] || {}).map((k) => {
+    let allData = [];
+    for(let p = 1; p <= (Number(lastPage) || 1); p++){
+      const pageData = await fetchRowsFromPage(p);
+      allData = allData.concat(pageData);
+    }
+
+    if(allData.length === 0){
+      alert('Tidak ada data untuk diexport.');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(allData);
+
+    const colWidths = Object.keys(allData[0] || {}).map((k) => {
       const maxLen = Math.max(
         k.length,
-        ...data.map(r => String(r[k] ?? '').length)
+        ...allData.map(r => String(r[k] ?? '').length)
       );
-      return { wch: Math.min(Math.max(12, maxLen + 2), 60) };
+      return { wch: Math.min(Math.max(14, maxLen + 2), 70) };
     });
     ws['!cols'] = colWidths;
 
@@ -1124,7 +1176,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if(printBtn){
-    printBtn.addEventListener('click', function(){
+    printBtn.addEventListener('click', async function(){
       const modal = document.getElementById('dtModal');
       if(modal && modal.classList.contains('is-open')){
         modal.classList.remove('is-open');
@@ -1132,52 +1184,63 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.style.overflow = '';
         modal.setAttribute('aria-hidden', 'true');
       }
-      exportArsipToExcel();
+
+      try{
+        printBtn.disabled = true;
+        await exportArsipToExcel();
+      }catch(err){
+        console.error(err);
+        alert(err?.message || 'Export gagal. Cek console.');
+      }finally{
+        printBtn.disabled = false;
+      }
     });
   }
 
   // =========================
-  // SORT NILAI KONTRAK (tetap, hanya sort DOM page ini)
+  // ✅ SORT NILAI KONTRAK (SERVER-SIDE) - berlaku untuk semua halaman
+  // ✅ FIX: default = "tidak sort" (tanpa param)
+  // Urutan klik: none -> desc -> asc -> none
   // =========================
-  const btn   = document.getElementById('sortNilaiBtn');
-  const icon  = document.getElementById('sortNilaiIcon');
-  const table = document.querySelector('.ap-table');
+  const sortBtn  = document.getElementById('sortNilaiBtn');
+  const sortIcon = document.getElementById('sortNilaiIcon');
 
-  if (btn && icon && table) {
-    let direction = 'desc';
-
-    function parseRupiah(text){
-      return parseInt((text || '').replace(/[^\d]/g, '')) || 0;
+  function getSortFromUrl(){
+    try{
+      const u = new URL(window.location.href);
+      const s = (u.searchParams.get('sort_nilai') || '').toLowerCase();
+      return (s === 'asc' || s === 'desc') ? s : ''; // '' = none
+    }catch(e){
+      return '';
     }
+  }
 
-    btn.addEventListener('click', () => {
-      const rows = Array.from(table.querySelectorAll('.ap-row'));
-      const pagination = table.querySelector('.ap-pagination-wrap');
+  function applySortIcon(state){
+    if(!sortIcon) return;
+    if(state === 'asc') sortIcon.className = 'bi bi-sort-up';
+    else if(state === 'desc') sortIcon.className = 'bi bi-sort-down-alt';
+    else sortIcon.className = 'bi bi-arrow-down-up'; // none
+  }
 
-      rows.sort((a, b) => {
-        const aMoneyEl = a.querySelector('.ap-money');
-        const bMoneyEl = b.querySelector('.ap-money');
-        const aVal = parseRupiah(aMoneyEl ? aMoneyEl.innerText : '');
-        const bVal = parseRupiah(bMoneyEl ? bMoneyEl.innerText : '');
-        return direction === 'desc' ? bVal - aVal : aVal - bVal;
-      });
+  // set icon awal dari URL
+  applySortIcon(getSortFromUrl());
 
-      rows.forEach(row => {
-        if (pagination) table.insertBefore(row, pagination);
-        else table.appendChild(row);
-      });
+  if(sortBtn){
+    sortBtn.addEventListener('click', function(){
+      const u = new URL(window.location.href);
+      const cur = getSortFromUrl();
 
-      if(direction === 'desc'){
-        direction = 'asc';
-        icon.className = 'bi bi-sort-up';
+      // cycle: none -> desc -> asc -> none
+      const next = (cur === '') ? 'desc' : (cur === 'desc' ? 'asc' : '');
+
+      if(next === ''){
+        u.searchParams.delete('sort_nilai');
       }else{
-        direction = 'desc';
-        icon.className = 'bi bi-sort-down-alt';
+        u.searchParams.set('sort_nilai', next);
       }
 
-      syncSelectAllState();
-      updateEditState();
-      updateDeleteState();
+      u.searchParams.delete('page'); // reset page saat sort berubah
+      window.location.href = u.toString();
     });
   }
 

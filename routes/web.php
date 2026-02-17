@@ -140,6 +140,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/arsip-pbj', [UnitController::class, 'arsipIndex'])
             ->name('arsip.pbj');
 
+        /**
+         * ✅✅ EXPORT ARSIP UNIT (CSV)
+         * Penting: taruh sebelum route dinamis /arsip/{id}/...
+         * URL contoh: /unit/arsip/export?status=Publik&tahun=2025&q=...
+         */
+        Route::get('/arsip/export', [UnitController::class, 'arsipExport'])
+            ->name('arsip.export');
+
         // ✅ EDIT + UPDATE
         Route::get('/arsip/{id}/edit', [UnitController::class, 'arsipEdit'])
             ->name('arsip.edit');

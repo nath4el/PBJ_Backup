@@ -25,10 +25,6 @@
 @php
   $unitName = auth()->user()->name ?? "Unit Kerja";
 
-  /**
-   * ✅ FINAL: TANPA DUMMY
-   * Controller WAJIB mengirim $arsips (LengthAwarePaginator) dari database.
-   */
   if (!isset($arsips) || !($arsips instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)) {
     throw new \RuntimeException('Variable $arsips (paginator) tidak dikirim dari controller. Pastikan UnitController@arsipIndex mengirim compact("arsips").');
   }
@@ -38,11 +34,14 @@
   $selectedYear   = request()->query('tahun', 'Semua');
   $selectedQ      = request()->query('q', '');
 
+  // ✅ sort nilai (server-side)
+  $initialSortNilai = strtolower((string) request()->query('sort_nilai', ''));
+  if (!in_array($initialSortNilai, ['asc', 'desc'], true)) $initialSortNilai = '';
+
   // Bentuk rows sesuai struktur yang dipakai UI
   $rows = collect($arsips->items())->map(function($item) use ($unitName){
     $r = is_array($item) ? $item : (array) $item;
 
-    // KOLOM E (Dokumen Tidak Dipersyaratkan) -> controller kirim array
     $rawE = $r["dokumen_tidak_dipersyaratkan"] ?? ($r["kolom_e"] ?? ($r["doc_note"] ?? null));
     $docNote = null;
 
@@ -75,13 +74,11 @@
       "pagu_anggaran" => $r["pagu_anggaran"] ?? ($r["pagu"] ?? null),
       "hps" => $r["hps"] ?? null,
 
-      // dokumen dari controller: object keyed by field
       "dokumen" => $r["dokumen"] ?? [],
       "doc_note" => $docNote,
     ];
   })->values()->all();
 
-  // ✅ Options filter Tahun harus dari controller (agar semua page sama)
   $years = [];
   if (isset($tahunOptions) && is_array($tahunOptions) && count($tahunOptions)) {
     $years = $tahunOptions;
@@ -93,14 +90,15 @@
   $unitOptions = array_values(array_unique(array_map(fn($x) => $x['unit'], $rows)));
   sort($unitOptions);
 
-  // ✅ FIX: lock ke unit yang BENAR-BENAR muncul di tabel (bukan $unitName yang bisa beda format)
   $lockedUnit = $unitOptions[0] ?? $unitName;
 
-  // ✅ Endpoint delete arsip (bulk)
-  $bulkDeleteUrl = url('/unit/arsip'); // DELETE /unit/arsip  => unit.arsip.bulkDestroy
+  $bulkDeleteUrl = url('/unit/arsip');
 
   // ✅ query string untuk pagination (biar page 2 ikut filter)
   $qs = request()->except('page');
+
+  // ✅ URL export (route)
+  $exportUrl = route('unit.arsip.export');
 @endphp
 
 <div class="dash-wrap">
@@ -166,6 +164,7 @@
       </div>
 
       <div class="ap-header-right">
+        {{-- ✅ EXPORT (SAMAKAN PPK: icon printer) --}}
         <button type="button" id="apPrintBtn" class="ap-print-btn" title="Cetak Arsip">
           <i class="bi bi-printer"></i>
           Export Arsip
@@ -181,7 +180,6 @@
           <input id="apSearchInput" type="text" placeholder="Cari..." value="{{ $selectedQ }}" />
         </div>
 
-        {{-- ✅ UNIT ROLE: filter unit disembunyikan & otomatis terkunci ke unit yang benar (sesuai data-unit di tabel) --}}
         <div class="ap-select" style="display:none;">
           <select id="apUnitFilter">
             <option value="{{ $lockedUnit }}" selected>{{ $lockedUnit }}</option>
@@ -239,7 +237,9 @@
         <div class="ap-col-center ap-nilai-sort">
           <span>Nilai Kontrak</span>
           <button type="button" id="sortNilaiBtn" class="ap-sort-btn" title="Urutkan Nilai Kontrak">
-            <i id="sortNilaiIcon" class="bi bi-sort-down-alt"></i>
+            <i id="sortNilaiIcon" class="bi
+              {{ $initialSortNilai === 'asc' ? 'bi-sort-up' : ($initialSortNilai === 'desc' ? 'bi-sort-down-alt' : 'bi-arrow-down-up') }}">
+            </i>
           </button>
         </div>
 
@@ -248,7 +248,6 @@
         <div class="ap-col-center" style="text-align:center;">Aksi</div>
       </div>
 
-      {{-- EMPTY STATE --}}
       @if(empty($rows))
         <div class="ap-empty" style="padding:24px;text-align:center;opacity:.85;">
           <i class="bi bi-inbox" style="font-size:28px;"></i>
@@ -273,13 +272,16 @@
 
             $rekananValue  = $r['nama_rekanan'] ?? '-';
             $docsValue     = $r['dokumen'] ?? [];
+
+            $nilaiRaw = preg_replace('/[^\d]/', '', (string)($r['nilai_kontrak'] ?? ''));
+            $nilaiRaw = $nilaiRaw === '' ? '0' : $nilaiRaw;
           @endphp
 
           <div class="ap-row"
               data-status="{{ $r['status_arsip'] }}"
               data-year="{{ $r['tahun'] }}"
               data-unit="{{ $r['unit'] }}"
-              data-search="{{ strtolower(($r['tahun'] ?? '').' '.($r['unit'] ?? '').' '.$namaPekerjaan.' '.$idrupValue.' '.($r['metode_pbj'] ?? '').' '.($r['nilai_kontrak'] ?? '').' '.($r['status_pekerjaan'] ?? '')) }}">
+              data-search="{{ strtolower(($r['tahun'] ?? '').' '.($r['unit'] ?? '').' '.$namaPekerjaan.' '.$idrupValue.' '.($r['metode_pbj'] ?? '').' '.($r['nilai_kontrak'] ?? '').' '.$nilaiRaw.' '.($r['status_pekerjaan'] ?? '')) }}">
 
             <div class="ap-check">
               <input class="ap-row-check" type="checkbox" value="{{ $r['id'] }}" aria-label="Pilih baris" />
@@ -494,7 +496,6 @@
 </div>
 
 <style>
-  /* (STYLE kamu tetap sama — aku tidak ubah) */
   body.page-arsip.dash-body{ font-size: 18px; line-height: 1.6; }
   .page-arsip{
     --ap-field-h: 46px; --ap-field-r: 12px; --ap-field-px: 12px;
@@ -506,6 +507,7 @@
   .page-arsip .ap-header{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   .page-arsip .ap-header-left{ min-width: 0; }
   .page-arsip .ap-header-right{ flex: 0 0 auto; display:flex; align-items:center; justify-content:flex-end; }
+
   .page-arsip .ap-print-btn{
     height: 42px; padding: 0 14px; border-radius: 12px;
     border: 1px solid rgba(0,0,0,.08);
@@ -518,6 +520,7 @@
   .page-arsip .ap-print-btn:hover{ background: var(--unsoed-yellow-dark); transform: translateY(-1px); }
   .page-arsip .ap-print-btn:active{ transform: translateY(0); }
   .page-arsip .ap-print-btn i{ font-size: 16px; line-height: 1; display:block; }
+
   .page-arsip .ap-filter-row{ display:flex; gap:12px; align-items:center; flex-wrap:nowrap; }
   .page-arsip .ap-search{ position: relative; flex: 1 1 auto; min-width: 220px; height: var(--ap-field-h); display:flex; align-items:center; }
   .page-arsip .ap-search i{ position:absolute; left: var(--ap-field-px); top: 50%; transform: translateY(-50%); font-size: 18px; opacity: .75; pointer-events:none; }
@@ -528,6 +531,7 @@
   .page-arsip .ap-tools{ display:flex; gap:10px; align-items:center; flex: 0 0 auto; }
   .page-arsip .ap-icbtn{ width: 40px; height: 40px; padding: 0; display:inline-flex; align-items:center; justify-content:center; line-height: 1; }
   .page-arsip .ap-icbtn i{ font-size: 18px; line-height: 1; display:block; }
+
   .page-arsip .ap-head,
   .page-arsip .ap-row{
     display:grid;
@@ -563,7 +567,6 @@
   .page-arsip .dt-money{ font-size: 18px; }
   .page-arsip .ap-icbtn.is-disabled{ opacity: .45; cursor: not-allowed; pointer-events: auto; }
 
-  /* POPUP */
   .page-arsip .dt-modal{ position: fixed; inset: 0; z-index: 9999; display: none; }
   .page-arsip .dt-modal.is-open{ display: flex; align-items: center; justify-content: center; padding: 10px; }
   .page-arsip .dt-backdrop{ position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
@@ -575,18 +578,13 @@
   .page-arsip .dt-close-inside i{ display:block; line-height: 1; font-size: 18px; }
   .page-arsip .dt-topbar .dt-close-inside{ transform: translate(6px, -8px) !important; }
   .page-arsip .dt-body{ padding: 16px 18px 18px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
-  .page-arsip .dt-body::-webkit-scrollbar{ width: 10px; }
-  .page-arsip .dt-body::-webkit-scrollbar-track{ border-radius: 24px; background: transparent; margin: 10px 0; }
-  .page-arsip .dt-body::-webkit-scrollbar-thumb{ border-radius: 24px; background: rgba(15, 23, 42, .18); }
 
-  /* KOLOM E NOTE */
   .page-arsip .dt-doc-note{ margin-top: 14px; border: 1px solid #e8eef3; background: #f8fbfd; border-radius: 16px; padding: 12px 14px; display:flex; gap:12px; align-items:flex-start; }
   .page-arsip .dt-doc-note-ic{ width: 40px; height: 40px; border-radius: 14px; display:grid; place-items:center; background: #ffffff; border: 1px solid #e8eef3; flex: 0 0 auto; }
   .page-arsip .dt-doc-note-ic i{ font-size: 18px; line-height: 1; display:block; opacity: .9; }
   .page-arsip .dt-doc-note-title{ font-size: 14px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
   .page-arsip .dt-doc-note-desc{ font-size: 13.5px; color: #475569; line-height: 1.5; }
 
-  /* DOC CARD + tombol hapus */
   .page-arsip .dt-doc-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
   @media (max-width: 900px){ .page-arsip .dt-doc-grid{ grid-template-columns: 1fr; } }
   .page-arsip .dt-doc-card{ border: 1px solid #e8eef3; background:#fff; border-radius: 16px; padding: 12px 14px; display:flex; align-items:center; gap:12px; text-decoration:none; color: inherit; position: relative; }
@@ -597,9 +595,6 @@
   .page-arsip .dt-doc-sub{ font-size: 12.5px; color:#64748b; margin-top: 2px; overflow-wrap:anywhere; }
   .page-arsip .dt-doc-act{ width: 36px; height: 36px; border-radius: 14px; display:grid; place-items:center; background:#f8fbfd; border: 1px solid #eef3f6; flex:0 0 auto; }
   .page-arsip .dt-doc-act i{ font-size: 16px; }
-  .page-arsip .dt-doc-del{ position:absolute; top: 10px; right: 10px; width: 34px; height: 34px; border-radius: 14px; border: 1px solid #fee2e2; background: #fff; color:#ef4444; display:grid; place-items:center; cursor:pointer; }
-  .page-arsip .dt-doc-del i{ font-size: 16px; }
-  .page-arsip .dt-doc-card.is-deleting{ opacity: .55; pointer-events:none; }
 
   .page-arsip .ap-pagination-wrap{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 14px 18px 16px; border-top: 2px solid #eef3f6; }
   .page-arsip .ap-page-info{ font-size: 13.5px; color:#64748b; white-space: nowrap; }
@@ -651,14 +646,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const refreshBtn = document.getElementById('apRefreshBtn');
   const deleteBtn  = document.getElementById('apDeleteBtn');
-  const printBtn   = document.getElementById('apPrintBtn');
 
   const bulkDeleteUrl = deleteBtn?.getAttribute('data-bulk-delete-url') || '/unit/arsip';
+
+  const baseUrl   = @json(url('/unit/arsip'));
+  const exportUrl = @json($exportUrl);
+
+  // ✅ Export BTN (samakan PPK: id apPrintBtn)
+  const printBtn = document.getElementById('apPrintBtn');
 
   const getRows = () => Array.from(document.querySelectorAll('.ap-row'));
   const getVisibleRows = () => getRows().filter(r => r.style.display !== 'none');
 
-  // ✅ FIX: lock unit pakai nilai yang sama dengan data-unit pada tabel
   const lockedUnitName = @json($lockedUnit);
   if (unitEl) unitEl.value = lockedUnitName;
 
@@ -709,30 +708,39 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // =========================
-  // ✅ AUTO REFRESH (SERVER-SIDE FILTER) - sama konsep PPK
-  // - setiap ganti filter/search => update query string, reset page=1
+  // ✅ SERVER-SIDE FILTER NAVIGATION (debounce)
+  // ✅ + pertahankan sort_nilai dari URL saat ini
   // =========================
+  let navTimer = null;
+
+  function getCurrentSortNilai(){
+    try{
+      const cur = new URL(window.location.href);
+      const s = (cur.searchParams.get('sort_nilai') || '').toLowerCase();
+      return (s === 'asc' || s === 'desc') ? s : '';
+    }catch(e){
+      return '';
+    }
+  }
+
   function buildUrlWithFilters(){
     const statusVal = filterEl ? filterEl.value : 'Semua';
     const yearVal   = yearEl ? yearEl.value : 'Semua';
     const qVal      = (searchEl ? searchEl.value : '').trim();
 
-    const url = new URL(window.location.href);
-    url.searchParams.delete('page'); // reset page
+    const url = new URL(baseUrl, window.location.origin);
 
     if(statusVal && statusVal !== 'Semua') url.searchParams.set('status', statusVal);
-    else url.searchParams.delete('status');
-
     if(yearVal && yearVal !== 'Semua') url.searchParams.set('tahun', yearVal);
-    else url.searchParams.delete('tahun');
-
     if(qVal !== '') url.searchParams.set('q', qVal);
-    else url.searchParams.delete('q');
 
+    const s = getCurrentSortNilai();
+    if(s) url.searchParams.set('sort_nilai', s);
+
+    url.searchParams.delete('page');
     return url.toString();
   }
 
-  let navTimer = null;
   function scheduleNavigate(delay = 1500){
     clearTimeout(navTimer);
     navTimer = setTimeout(() => {
@@ -743,11 +751,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }, delay);
   }
 
-  // dropdown cepat
   if (filterEl) filterEl.addEventListener('change', () => scheduleNavigate(150));
   if (yearEl)   yearEl.addEventListener('change', () => scheduleNavigate(150));
 
-  // search lebih lambat + Enter langsung
   if (searchEl){
     searchEl.addEventListener('input', () => scheduleNavigate(700));
 
@@ -771,8 +777,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   if(refreshBtn){
     refreshBtn.addEventListener('click', function(){
-      // refresh dengan query sekarang (tetap terfilter)
-      window.location.reload();
+      window.location.href = baseUrl;
     });
   }
 
@@ -791,11 +796,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  /**
-   * ✅ HAPUS ARSIP (REAL: DB)
-   * Pakai endpoint: DELETE /unit/arsip (unit.arsip.bulkDestroy)
-   * Body JSON: { ids: ["1","2", ...] }
-   */
   if(deleteBtn){
     deleteBtn.addEventListener('click', async function(){
       const ids = getCheckedIds();
@@ -877,63 +877,90 @@ document.addEventListener('DOMContentLoaded', function () {
   updateEditState();
   updateDeleteState();
 
-  if(printBtn){
-    printBtn.addEventListener('click', function(){
-      const modal = document.getElementById('dtModal');
-      if(modal && modal.classList.contains('is-open')){
-        modal.classList.remove('is-open');
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
-        modal.setAttribute('aria-hidden', 'true');
-      }
-      window.print();
-    });
-  }
+  // =========================
+  // ✅ SORT NILAI KONTRAK (SERVER-SIDE)
+  // =========================
+  const sortBtn  = document.getElementById('sortNilaiBtn');
+  const sortIcon = document.getElementById('sortNilaiIcon');
 
-  // SORT NILAI KONTRAK (tetap sama, client-side di page ini)
-  const btn   = document.getElementById('sortNilaiBtn');
-  const icon  = document.getElementById('sortNilaiIcon');
-  const table = document.querySelector('.ap-table');
-
-  if (btn && icon && table) {
-    let direction = 'desc';
-
-    function parseRupiah(text){
-      return parseInt((text || '').replace(/[^\d]/g, '')) || 0;
+  function getSortFromUrl(){
+    try{
+      const u = new URL(window.location.href);
+      const s = (u.searchParams.get('sort_nilai') || '').toLowerCase();
+      return (s === 'asc' || s === 'desc') ? s : '';
+    }catch(e){
+      return '';
     }
+  }
 
-    btn.addEventListener('click', () => {
-      const rows = Array.from(table.querySelectorAll('.ap-row'));
-      const pagination = table.querySelector('.ap-pagination-wrap');
+  const sortNow = getSortFromUrl();
+  if(sortIcon){
+    sortIcon.className =
+      (sortNow === 'asc')  ? 'bi bi-sort-up' :
+      (sortNow === 'desc') ? 'bi bi-sort-down-alt' :
+      'bi bi-arrow-down-up';
+  }
 
-      rows.sort((a, b) => {
-        const aMoneyEl = a.querySelector('.ap-money');
-        const bMoneyEl = b.querySelector('.ap-money');
-        const aVal = parseRupiah(aMoneyEl ? aMoneyEl.innerText : '');
-        const bVal = parseRupiah(bMoneyEl ? bMoneyEl.innerText : '');
-        return direction === 'desc' ? bVal - aVal : aVal - bVal;
-      });
+  if(sortBtn){
+    sortBtn.addEventListener('click', function(){
+      const u = new URL(window.location.href);
+      const cur = getSortFromUrl();
 
-      rows.forEach(row => {
-        if (pagination) table.insertBefore(row, pagination);
-        else table.appendChild(row);
-      });
+      const next = (cur === '') ? 'desc' : (cur === 'desc' ? 'asc' : '');
 
-      if(direction === 'desc'){
-        direction = 'asc';
-        icon.className = 'bi bi-sort-up';
-      }else{
-        direction = 'desc';
-        icon.className = 'bi bi-sort-down-alt';
-      }
+      if(next) u.searchParams.set('sort_nilai', next);
+      else u.searchParams.delete('sort_nilai');
 
-      syncSelectAllState();
-      updateEditState();
-      updateDeleteState();
+      u.searchParams.delete('page');
+      window.location.href = u.toString();
     });
   }
 
+  // =========================
+  // ✅ EXPORT EXCEL (SAMAKAN: EXPORT SEMUA DATA, BUKAN HANYA PAGE)
+  // - klik tombol langsung download
+  // - bawa query filter aktif dari URL saat ini
+  // - TANPA page param (jadi export semua halaman)
+  // =========================
+  function closeDetailModalIfOpen(){
+    const modal = document.getElementById('dtModal');
+    if(modal && modal.classList.contains('is-open')){
+      modal.classList.remove('is-open');
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function buildExportUrl(){
+    const u = new URL(exportUrl, window.location.origin);
+
+    const cur = new URL(window.location.href);
+    ['status','tahun','q','sort_nilai'].forEach(k => {
+      const v = cur.searchParams.get(k);
+      if(v !== null && v !== '') u.searchParams.set(k, v);
+    });
+
+    // samakan export excel
+    u.searchParams.set('format', 'xlsx');
+
+    // pastikan tidak ada param page ikut
+    u.searchParams.delete('page');
+
+    return u.toString();
+  }
+
+  if(printBtn){
+    printBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      closeDetailModalIfOpen();
+      window.location.href = buildExportUrl();
+    });
+  }
+
+  // =========================
   // MODAL DETAIL (tetap sama)
+  // =========================
   const modal = document.getElementById('dtModal');
   const closeBtn = document.getElementById('dtCloseBtn');
 
@@ -953,8 +980,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const docsEl = document.getElementById('dtDocList');
   const emptyEl = document.getElementById('dtDocEmpty');
-
-  let currentPengadaanId = null;
 
   const normalizeGroups = (raw) => {
     if(!raw) return [];
@@ -1071,8 +1096,6 @@ document.addEventListener('DOMContentLoaded', function () {
   function openModal(payload){
     if(!modal) return;
 
-    currentPengadaanId = payload.id || null;
-
     if(elTitle)   elTitle.textContent   = payload.title || '-';
     if(elUnit)    elUnit.textContent    = payload.unit || '-';
     if(elTahun)   elTahun.textContent   = payload.tahun || '-';
@@ -1109,7 +1132,6 @@ document.addEventListener('DOMContentLoaded', function () {
     document.body.classList.remove('modal-open');
     document.body.style.overflow = '';
     modal.setAttribute('aria-hidden', 'true');
-    currentPengadaanId = null;
   }
 
   document.addEventListener('click', function(e){

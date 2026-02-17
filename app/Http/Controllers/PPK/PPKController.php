@@ -39,7 +39,7 @@ class PpkController extends Controller
         // ✅ kolom nama unit fleksibel
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
             : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
+                : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
         // ✅ Dropdown Unit = dari tabel units (id + nama)
         $units = Unit::orderBy($unitNameCol, 'asc')->get(['id', $unitNameCol]);
@@ -216,6 +216,8 @@ class PpkController extends Controller
 
     /**
      * Arsip PBJ (PPK) - FILTER + SEARCH aman untuk PostgreSQL
+     * ✅ FINAL: sort nilai_kontrak server-side (sort_nilai=asc|desc)
+     * ✅ FIX: default TIDAK sort nilai kontrak (biar refresh balik "sedia kala")
      */
     public function arsipIndex(Request $request)
     {
@@ -225,6 +227,14 @@ class PpkController extends Controller
         $unitQ  = trim((string)$request->query('unit', 'Semua'));
         $status = trim((string)$request->query('status', 'Semua'));
         $tahunQ = trim((string)$request->query('tahun', 'Semua'));
+
+        // ✅ sort nilai kontrak (server-side) - aktif hanya jika param ada
+        $sortNilaiRaw = $request->query('sort_nilai'); // null jika tidak ada
+        $sortNilai = null;
+        if ($sortNilaiRaw !== null && $sortNilaiRaw !== '') {
+            $tmp = strtolower(trim((string)$sortNilaiRaw));
+            if (in_array($tmp, ['asc', 'desc'], true)) $sortNilai = $tmp;
+        }
 
         $driver = DB::connection()->getDriverName();           // 'pgsql' / 'mysql'
         $likeOp = $driver === 'pgsql' ? 'ilike' : 'like';      // pgsql pakai ILIKE
@@ -248,7 +258,7 @@ class PpkController extends Controller
             if (ctype_digit($tahunQ)) $tahunInt = (int)$tahunQ;
         }
 
-        $arsips = Pengadaan::with('unit')
+        $arsipsQuery = Pengadaan::with('unit')
             ->when($unitId !== null, fn($qq) => $qq->where('unit_id', $unitId))
             ->when($statusFixed !== null, fn($qq) => $qq->where('status_arsip', $statusFixed))
 
@@ -276,11 +286,11 @@ class PpkController extends Controller
                     }
 
                     $w->orWhere('nama_pekerjaan', $likeOp, $like)
-                      ->orWhere('id_rup', $likeOp, $like)
-                      ->orWhere('jenis_pengadaan', $likeOp, $like)
-                      ->orWhere('status_arsip', $likeOp, $like)
-                      ->orWhere('status_pekerjaan', $likeOp, $like)
-                      ->orWhere('nama_rekanan', $likeOp, $like);
+                        ->orWhere('id_rup', $likeOp, $like)
+                        ->orWhere('jenis_pengadaan', $likeOp, $like)
+                        ->orWhere('status_arsip', $likeOp, $like)
+                        ->orWhere('status_pekerjaan', $likeOp, $like)
+                        ->orWhere('nama_rekanan', $likeOp, $like);
 
                     if ($driver === 'pgsql') {
                         $w->orWhereRaw("CAST(COALESCE(nilai_kontrak,0) AS TEXT) ILIKE ?", [$like]);
@@ -302,10 +312,28 @@ class PpkController extends Controller
                         });
                     });
                 });
-            })
+            });
 
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
+        /**
+         * ✅ SORTING FINAL
+         * - DEFAULT (tanpa sort_nilai): updated_at desc, id desc (sedia kala)
+         * - Kalau sort_nilai ada: nilai_kontrak asc/desc lalu tie-breaker updated_at/id
+         */
+        $arsipsQuery->orderByDesc('updated_at')->orderByDesc('id');
+
+        if ($sortNilai !== null) {
+            $arsipsQuery->reorder();
+
+            if ($sortNilai === 'asc') {
+                $arsipsQuery->orderByRaw('COALESCE(nilai_kontrak, 0) ASC');
+            } else {
+                $arsipsQuery->orderByRaw('COALESCE(nilai_kontrak, 0) DESC');
+            }
+
+            $arsipsQuery->orderByDesc('updated_at')->orderByDesc('id');
+        }
+
+        $arsips = $arsipsQuery
             ->paginate(10)
             ->withQueryString();
 
@@ -347,7 +375,7 @@ class PpkController extends Controller
 
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
             : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
+                : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
         $unitOptions = Unit::orderBy($unitNameCol, 'asc')
             ->pluck($unitNameCol)
@@ -377,7 +405,7 @@ class PpkController extends Controller
         // ✅ kolom nama unit fleksibel
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
             : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
+                : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
         // ✅ kirim data unit untuk dropdown berbasis unit_id (id + nama)
         $units = Unit::query()
@@ -447,7 +475,6 @@ class PpkController extends Controller
         }
 
         if (!$resolvedUnitId) {
-            // pesan error mengikuti input yang paling mungkin dipakai
             $key = !empty($data['unit_id']) ? 'unit_id' : 'unit_kerja';
             return redirect()->back()->withInput()->withErrors([$key => 'Unit kerja tidak valid / tidak ditemukan di database.']);
         }
@@ -531,7 +558,7 @@ class PpkController extends Controller
 
         $unitNameCol = Schema::hasColumn('units', 'nama') ? 'nama'
             : (Schema::hasColumn('units', 'nama_unit') ? 'nama_unit'
-            : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
+                : (Schema::hasColumn('units', 'name') ? 'name' : 'id'));
 
         // ✅ untuk dropdown edit berbasis unit_id
         $units = Unit::query()->select(['id', $unitNameCol])->orderBy($unitNameCol, 'asc')->get();

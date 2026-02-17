@@ -172,48 +172,28 @@ class UnitController extends Controller
         return 'Rp ' . number_format($num, 0, ',', '.');
     }
 
-    // =========================
-    // ✅ UPDATED: Arsip Index (SERVER-SIDE FILTER + SEARCH + SORT + PAGINATION)
-    // =========================
-    public function arsipIndex(Request $request)
+    /* =========================================================
+     * ✅ HELPER QUERY ARSIP (dipakai Index + Export)
+     * ========================================================= */
+    private function buildArsipQuery(Request $request, int $unitId)
     {
-        $unitName = auth()->user()->name ?? 'Unit Kerja';
-        $unitId   = auth()->user()->unit_id;
-
-        if (!$unitId) {
-            abort(403, 'Akun unit belum terhubung ke unit_id.');
-        }
-
-        // ✅ input dari UI (query string) - konsisten dengan PPK
         $q      = trim((string)$request->query('q', ''));
         $tahun  = (string)$request->query('tahun', 'Semua');
         $status = (string)$request->query('status', 'Semua');
 
-        // (opsional) sorting nilai kontrak server-side
-        // nilai: "asc" / "desc" / "" (default)
         $sortNilai = strtolower((string)$request->query('sort_nilai', ''));
-
-        // ✅ opsi tahun harus dari DB (biar pagination page 2 tetap konsisten)
-        $tahunOptions = Pengadaan::where('unit_id', $unitId)
-            ->whereNotNull('tahun')
-            ->select('tahun')
-            ->distinct()
-            ->orderBy('tahun', 'desc')
-            ->pluck('tahun')
-            ->map(fn($t) => (int)$t)
-            ->values()
-            ->all();
+        if (!in_array($sortNilai, ['asc', 'desc'], true)) {
+            $sortNilai = '';
+        }
 
         $query = Pengadaan::query()
             ->with('unit')
             ->where('unit_id', $unitId);
 
-        // ✅ filter status arsip
         if ($status !== '' && $status !== 'Semua') {
             $query->where('status_arsip', $status);
         }
 
-        // ✅ filter tahun
         if ($tahun !== '' && $tahun !== 'Semua') {
             if (ctype_digit($tahun)) {
                 $query->where('tahun', (int)$tahun);
@@ -222,7 +202,6 @@ class UnitController extends Controller
             }
         }
 
-        // ✅ search global
         if ($q !== '') {
             $qLower = mb_strtolower($q);
 
@@ -247,15 +226,36 @@ class UnitController extends Controller
             });
         }
 
-        // ✅ sorting
-        if (in_array($sortNilai, ['asc', 'desc'], true)) {
+        if ($sortNilai !== '') {
             $query->orderBy('nilai_kontrak', $sortNilai);
             $query->orderByDesc('updated_at')->orderByDesc('id');
         } else {
             $query->orderByDesc('updated_at')->orderByDesc('id');
         }
 
-        $arsips = $query
+        return $query;
+    }
+
+    public function arsipIndex(Request $request)
+    {
+        $unitName = auth()->user()->name ?? 'Unit Kerja';
+        $unitId   = auth()->user()->unit_id;
+
+        if (!$unitId) {
+            abort(403, 'Akun unit belum terhubung ke unit_id.');
+        }
+
+        $tahunOptions = Pengadaan::where('unit_id', $unitId)
+            ->whereNotNull('tahun')
+            ->select('tahun')
+            ->distinct()
+            ->orderBy('tahun', 'desc')
+            ->pluck('tahun')
+            ->map(fn($t) => (int)$t)
+            ->values()
+            ->all();
+
+        $arsips = $this->buildArsipQuery($request, (int)$unitId)
             ->paginate(10)
             ->withQueryString();
 
@@ -274,19 +274,373 @@ class UnitController extends Controller
                 'hps' => $this->formatRupiah($p->hps),
                 'nama_rekanan' => $p->nama_rekanan ?? '-',
                 'unit' => $p->unit?->nama ?? '-',
-
-                // ✅ dokumen siap untuk modal detail (punya url showDokumen)
                 'dokumen' => $this->buildDokumenList($p),
-
-                // ✅ kolom E (array)
                 'dokumen_tidak_dipersyaratkan' => $this->normalizeArray($p->dokumen_tidak_dipersyaratkan),
             ];
         });
 
         $arsips->setCollection($mapped);
 
-        // ✅ kirim tahunOptions juga (tanpa ubah konten lain)
         return view('Unit.ArsipPBJ', compact('unitName', 'arsips', 'tahunOptions'));
+    }
+
+    /* =========================================================
+     * ✅ EXPORT ARSIP (EXCEL) - TANPA ZipArchive
+     * - output: .xlsx asli (Zip + SpreadsheetML)
+     * ========================================================= */
+    public function arsipExport(Request $request)
+    {
+        $unitId = auth()->user()->unit_id;
+        if (!$unitId) {
+            abort(403, 'Akun unit belum terhubung ke unit_id.');
+        }
+
+        $items = $this->buildArsipQuery($request, (int)$unitId)->get();
+
+        $filename = 'Arsip_PBJ_' . date('Y-m-d_His') . '.xlsx';
+
+        $headers = [
+            'Nama Pekerjaan',
+            'Unit Kerja',
+            'Tahun Anggaran',
+            'ID RUP',
+            'Status Pekerjaan',
+            'Nama Rekanan',
+            'Jenis Pengadaan',
+            'Pagu Anggaran',
+            'HPs',
+            'Nilai Kontrak',
+            'Dokumen Pengadaan',
+            'Dokumen tidak dipersyaratkan',
+        ];
+
+        $xmlEscape = function ($s): string {
+            $s = (string)($s ?? '');
+            $s = str_replace(["\r\n", "\r"], "\n", $s);
+            return htmlspecialchars($s, ENT_QUOTES | ENT_XML1, 'UTF-8');
+        };
+
+        $colLetter = function (int $n): string {
+            $s = '';
+            while ($n > 0) {
+                $n--;
+                $s = chr(65 + ($n % 26)) . $s;
+                $n = intdiv($n, 26);
+            }
+            return $s;
+        };
+
+        // ✅ PERUBAHAN: flattenDokumen dibuat kompatibel dengan output buildDokumenList($p)
+        $flattenDokumen = function ($dokumen): string {
+            if (empty($dokumen)) return '';
+
+            if (is_string($dokumen)) {
+                $decoded = json_decode($dokumen, true);
+                if (json_last_error() === JSON_ERROR_NONE) $dokumen = $decoded;
+            }
+            if (!is_array($dokumen)) return '';
+
+            $isAssoc = array_keys($dokumen) !== range(0, count($dokumen) - 1);
+
+            $basename = function ($p) {
+                $p = trim((string)$p);
+                if ($p === '') return '';
+                $parts = preg_split('#[\/\\\\]#', $p);
+                return end($parts) ?: $p;
+            };
+
+            $normalizeItemName = function ($item) use ($basename) {
+                if (is_string($item)) return $basename($item);
+
+                if (is_array($item)) {
+                    $name = $item['name'] ?? $item['filename'] ?? $item['file'] ?? $item['path'] ?? $item['url'] ?? '';
+                    return $basename($name);
+                }
+
+                if (is_object($item)) {
+                    $name = $item->name ?? $item->filename ?? $item->file ?? $item->path ?? $item->url ?? '';
+                    return $basename($name);
+                }
+
+                return '';
+            };
+
+            $parts = [];
+
+            if ($isAssoc) {
+                foreach ($dokumen as $field => $list) {
+                    $arr = is_array($list) ? $list : [$list];
+
+                    // ✅ PERUBAHAN: pakai label manusiawi jika tersedia dari buildDokumenList()
+                    $prefix = $field;
+                    if (isset($arr[0]) && is_array($arr[0]) && !empty($arr[0]['label'])) {
+                        $prefix = (string)$arr[0]['label'];
+                    }
+
+                    $names = array_values(array_filter(array_map($normalizeItemName, $arr)));
+                    if (!empty($names)) $parts[] = $prefix . ': ' . implode(', ', $names);
+                }
+            } else {
+                $names = array_values(array_filter(array_map($normalizeItemName, $dokumen)));
+                if (!empty($names)) $parts[] = implode(', ', $names);
+            }
+
+            return implode(' | ', $parts);
+        };
+
+        $buildDocNote = function ($p): string {
+            $rawE = $p->dokumen_tidak_dipersyaratkan ?? ($p->kolom_e ?? ($p->doc_note ?? null));
+
+            if (is_array($rawE) && count($rawE) > 0) {
+                return implode(', ', array_map(fn($x) => is_string($x) ? $x : json_encode($x), $rawE));
+            }
+
+            if (is_string($rawE)) {
+                $try = json_decode($rawE, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($try)) {
+                    return implode(', ', array_map(fn($x) => is_string($x) ? $x : json_encode($x), $try));
+                }
+            }
+
+            $eVal = is_string($rawE) ? trim($rawE) : $rawE;
+
+            if ($eVal === true || $eVal === 1 || $eVal === "1" || (is_string($eVal) && in_array(strtolower($eVal), ["ya","iya","true","yes"], true))) {
+                return "Dokumen pada Kolom E bersifat opsional (tidak dipersyaratkan).";
+            }
+
+            if (is_string($eVal) && $eVal !== "") return $eVal;
+
+            return '';
+        };
+
+        $dataRows = [];
+        foreach ($items as $p) {
+            $namaPekerjaan = (string)($p->nama_pekerjaan ?? $p->pekerjaan ?? $p->judul ?? '');
+            $unitKerja     = (string)($p->unit?->nama ?? (auth()->user()->name ?? 'Unit Kerja'));
+            $tahunAnggaran = (string)($p->tahun ?? '');
+            $idRup         = (string)($p->id_rup ?? $p->idrup ?? '');
+            $statusPek     = (string)($p->status_pekerjaan ?? '');
+            $rekanan       = (string)($p->nama_rekanan ?? $p->rekanan ?? '');
+            $jenisPeng     = (string)($p->jenis_pengadaan ?? $p->jenis ?? '');
+            $paguAnggaran  = $this->formatRupiah($p->pagu_anggaran);
+            $hps           = $this->formatRupiah($p->hps);
+            $nilaiKontrak  = $this->formatRupiah($p->nilai_kontrak);
+
+            // ✅ PERUBAHAN UTAMA: ambil dokumen dari seluruh field dokumen_* via buildDokumenList()
+            $dokumenText   = $flattenDokumen($this->buildDokumenList($p));
+
+            $docNote       = $buildDocNote($p);
+
+            $dataRows[] = [
+                $namaPekerjaan,
+                $unitKerja,
+                $tahunAnggaran,
+                $idRup,
+                $statusPek,
+                $rekanan,
+                $jenisPeng,
+                $paguAnggaran,
+                $hps,
+                $nilaiKontrak,
+                $dokumenText,
+                $docNote,
+            ];
+        }
+
+        $sheetXml = (function () use ($headers, $dataRows, $xmlEscape, $colLetter) {
+            $xml  = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+            $xml .= '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ';
+            $xml .= 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+            $xml .= '<sheetData>';
+
+            // header row (POLOS) s="0"
+            $xml .= '<row r="1">';
+            $c = 1;
+            foreach ($headers as $h) {
+                $ref = $colLetter($c) . '1';
+                $xml .= '<c r="'.$ref.'" t="inlineStr" s="0"><is><t>'.$xmlEscape($h).'</t></is></c>';
+                $c++;
+            }
+            $xml .= '</row>';
+
+            $r = 2;
+            foreach ($dataRows as $row) {
+                $xml .= '<row r="'.$r.'">';
+                $c = 1;
+                foreach ($row as $val) {
+                    $ref = $colLetter($c) . $r;
+                    $xml .= '<c r="'.$ref.'" t="inlineStr" s="0"><is><t>'.$xmlEscape($val).'</t></is></c>';
+                    $c++;
+                }
+                $xml .= '</row>';
+                $r++;
+            }
+
+            $xml .= '</sheetData>';
+            $xml .= '</worksheet>';
+            return $xml;
+        })();
+
+        $stylesXml =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<fonts count="1">'
+            . '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>'
+            . '</fonts>'
+            . '<fills count="1">'
+            . '<fill><patternFill patternType="none"/></fill>'
+            . '</fills>'
+            . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+            . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            . '<cellXfs count="1">'
+            . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            . '</cellXfs>'
+            . '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+            . '</styleSheet>';
+
+        $contentTypesXml =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            . '<Default Extension="xml" ContentType="application/xml"/>'
+            . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            . '</Types>';
+
+        $relsXml =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            . '</Relationships>';
+
+        $workbookXml =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . '<sheets><sheet name="Arsip PBJ" sheetId="1" r:id="rId1"/></sheets>'
+            . '</workbook>';
+
+        $workbookRelsXml =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            . '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            . '</Relationships>';
+
+        $zipBinary = $this->zipBuildStore([
+            '[Content_Types].xml'        => $contentTypesXml,
+            '_rels/.rels'                => $relsXml,
+            'xl/workbook.xml'            => $workbookXml,
+            'xl/_rels/workbook.xml.rels' => $workbookRelsXml,
+            'xl/styles.xml'              => $stylesXml,
+            'xl/worksheets/sheet1.xml'   => $sheetXml,
+        ]);
+
+        return response()->streamDownload(function () use ($zipBinary) {
+            echo $zipBinary;
+        }, $filename, [
+            'Content-Type'  => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'max-age=0',
+            'Pragma'        => 'public',
+        ]);
+    }
+
+    private function zipBuildStore(array $files): string
+    {
+        $data = '';
+        $cd   = '';
+        $offset = 0;
+        $i = 0;
+
+        [$dosTime, $dosDate] = $this->zipDosTimeDate(time());
+
+        foreach ($files as $name => $content) {
+            $i++;
+            $name = str_replace('\\', '/', (string)$name);
+            $content = (string)$content;
+
+            $crc = crc32($content);
+            if ($crc < 0) $crc = $crc + 4294967296;
+
+            $size = strlen($content);
+            $nameLen = strlen($name);
+
+            $localHeader =
+                pack('V', 0x04034b50) .
+                pack('v', 20) .
+                pack('v', 0) .
+                pack('v', 0) .
+                pack('v', $dosTime) .
+                pack('v', $dosDate) .
+                $this->zipUInt32($crc) .
+                $this->zipUInt32($size) .
+                $this->zipUInt32($size) .
+                pack('v', $nameLen) .
+                pack('v', 0) .
+                $name;
+
+            $data .= $localHeader . $content;
+
+            $centralHeader =
+                pack('V', 0x02014b50) .
+                pack('v', 20) .
+                pack('v', 20) .
+                pack('v', 0) .
+                pack('v', 0) .
+                pack('v', $dosTime) .
+                pack('v', $dosDate) .
+                $this->zipUInt32($crc) .
+                $this->zipUInt32($size) .
+                $this->zipUInt32($size) .
+                pack('v', $nameLen) .
+                pack('v', 0) .
+                pack('v', 0) .
+                pack('v', 0) .
+                pack('v', 0) .
+                $this->zipUInt32(0) .
+                $this->zipUInt32($offset) .
+                $name;
+
+            $cd .= $centralHeader;
+            $offset = strlen($data);
+        }
+
+        $cdSize = strlen($cd);
+        $cdOffset = strlen($data);
+
+        $eocd =
+            pack('V', 0x06054b50) .
+            pack('v', 0) .
+            pack('v', 0) .
+            pack('v', $i) .
+            pack('v', $i) .
+            $this->zipUInt32($cdSize) .
+            $this->zipUInt32($cdOffset) .
+            pack('v', 0);
+
+        return $data . $cd . $eocd;
+    }
+
+    private function zipDosTimeDate(int $unixTime): array
+    {
+        $d = getdate($unixTime);
+        $year = max(1980, (int)$d['year']);
+        $month = (int)$d['mon'];
+        $day = (int)$d['mday'];
+        $hour = (int)$d['hours'];
+        $min = (int)$d['minutes'];
+        $sec = (int)$d['seconds'];
+
+        $dosTime = (($hour & 0x1F) << 11) | (($min & 0x3F) << 5) | ((int)($sec / 2) & 0x1F);
+        $dosDate = ((($year - 1980) & 0x7F) << 9) | (($month & 0x0F) << 5) | ($day & 0x1F);
+
+        return [$dosTime, $dosDate];
+    }
+
+    private function zipUInt32(int $v): string
+    {
+        return pack('V', $v & 0xFFFFFFFF);
     }
 
     public function arsipEdit($id)
@@ -330,15 +684,12 @@ class UnitController extends Controller
             ->where('unit_id', $unitId)
             ->firstOrFail();
 
-        // ✅ ambil & normalisasi input (biar A/B/C/E juga “nyambung” walau nama input beda)
         $payload = $this->normalizedPengadaanPayload($request, (int)$unitId);
-
         Validator::make($payload, $this->rulesPengadaan())->validate();
 
         DB::beginTransaction();
         try {
-            // A–C–E (NON FILE)
-            $pengadaan->unit_id          = (int)$unitId; // lock
+            $pengadaan->unit_id          = (int)$unitId;
             $pengadaan->tahun            = (int)$payload['tahun'];
             $pengadaan->nama_pekerjaan   = $payload['nama_pekerjaan'];
             $pengadaan->id_rup           = $payload['id_rup'];
@@ -353,10 +704,8 @@ class UnitController extends Controller
 
             $pengadaan->dokumen_tidak_dipersyaratkan = $payload['dokumen_tidak_dipersyaratkan'];
 
-            // D (FILE): append ke existing
             $this->handleUploadDokumenToModel($request, $pengadaan, true);
 
-            // ✅ updated_at otomatis berubah saat save()
             $pengadaan->save();
 
             DB::commit();
@@ -471,7 +820,6 @@ class UnitController extends Controller
             abort(403, 'Akun unit belum terhubung ke unit_id.');
         }
 
-        // ✅ ambil & normalisasi input (A/B/C/E)
         $payload = $this->normalizedPengadaanPayload($request, (int)$unitId);
         $payload['created_by'] = auth()->id();
 
@@ -481,7 +829,6 @@ class UnitController extends Controller
         try {
             $pengadaan = Pengadaan::create($payload);
 
-            // D (FILE)
             $this->handleUploadDokumenToModel($request, $pengadaan, false);
             $pengadaan->save();
 
@@ -493,7 +840,6 @@ class UnitController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            // cleanup folder bila sempat tercipta
             if (isset($pengadaan) && $pengadaan instanceof Pengadaan) {
                 try { Storage::disk('public')->deleteDirectory("pengadaan/{$pengadaan->id}"); } catch (\Throwable $ex) {}
                 try { $pengadaan->delete(); } catch (\Throwable $ex) {}
@@ -506,10 +852,6 @@ class UnitController extends Controller
         }
     }
 
-    /**
-     * ✅ LIHAT FILE (INLINE) - BUKAN DOWNLOAD
-     * Route: /unit/arsip/{id}/dokumen/{field}/{file}
-     */
     public function showDokumen($id, $field, $file)
     {
         $unitId = auth()->user()->unit_id;
@@ -529,15 +871,10 @@ class UnitController extends Controller
 
         if (!$matchPath || !Storage::disk('public')->exists($matchPath)) abort(404);
 
-        // ✅ redirect ke file-viewer pakai /storage/...
         $publicUrl = '/storage/' . ltrim($matchPath, '/');
         return redirect()->route('file.viewer', ['file' => $publicUrl]);
     }
 
-    /**
-     * ✅ FILE VIEWER (ANTI DOUBLE-WRAP + IZINKAN localhost/127.0.0.1)
-     * Route: GET /file-viewer?file=...
-     */
     public function fileViewer(Request $request)
     {
         $raw = (string)$request->query('file', '');
@@ -596,8 +933,8 @@ class UnitController extends Controller
             abort(403, 'FILE TIDAK DIIZINKAN.');
         }
 
-        $publicPath = ltrim($finalUrl, '/');                 // storage/...
-        $diskPath   = preg_replace('#^storage/#', '', $publicPath); // pengadaan/...
+        $publicPath = ltrim($finalUrl, '/');
+        $diskPath   = preg_replace('#^storage/#', '', $publicPath);
 
         if (!$diskPath || !Storage::disk('public')->exists($diskPath)) {
             abort(404);
@@ -718,13 +1055,6 @@ class UnitController extends Controller
         return redirect()->route('unit.kelola.akun')->with('success', 'Akun berhasil diperbarui.');
     }
 
-    // =========================
-    // HELPERS (PENTING)
-    // =========================
-
-    /**
-     * ✅ Rules untuk A/B/C/E (bagian “selain D”)
-     */
     private function rulesPengadaan(): array
     {
         return [
@@ -744,10 +1074,6 @@ class UnitController extends Controller
         ];
     }
 
-    /**
-     * ✅ Ini kunci biar A/B/C/E nyambung walau nama input di blade beda-beda.
-     * Kamu boleh punya input: pekerjaan/judul/nama_pekerjaan, idrup/id_rup, pagu/pagu_anggaran, dll.
-     */
     private function normalizedPengadaanPayload(Request $request, int $unitId): array
     {
         $pick = function(array $keys, $default = null) use ($request) {
@@ -764,7 +1090,6 @@ class UnitController extends Controller
             return $num === '' ? null : (int)$num;
         };
 
-        // Kolom E bisa datang dari: array checkbox/tag input atau hidden JSON
         $docTidak = [];
         $arrE = $request->input('dokumen_tidak_dipersyaratkan');
         if (is_array($arrE)) {
@@ -775,7 +1100,6 @@ class UnitController extends Controller
                 $decoded = json_decode($jsonE, true);
                 if (is_array($decoded)) $docTidak = $decoded;
             } else {
-                // fallback: kalau kamu punya textarea/field lain untuk note E
                 $fallbackText = $pick(['doc_note','dokumen_e','kolom_e'], '');
                 if (is_string($fallbackText) && trim($fallbackText) !== '') {
                     $docTidak = [trim($fallbackText)];
@@ -787,38 +1111,29 @@ class UnitController extends Controller
             return ($s === '' || $s === null) ? null : $s;
         }, $docTidak)));
 
-        // Status arsip kadang dikirim "Private" di UI -> samakan ke "Privat"
         $statusArsip = (string)$pick(['status_arsip','akses','statusAkses'], 'Privat');
         if (strtolower($statusArsip) === 'private') $statusArsip = 'Privat';
 
         return [
-            'unit_id' => (int)$unitId, // lock
+            'unit_id' => (int)$unitId,
             'tahun' => (int)$pick(['tahun','year'], (int)date('Y')),
 
-            // A
             'nama_pekerjaan' => $pick(['nama_pekerjaan','pekerjaan','judul','namaPekerjaan'], null),
             'id_rup' => $pick(['id_rup','idrup','id_rup_paket','idRup'], null),
             'jenis_pengadaan' => $pick(['jenis_pengadaan','metode_pbj','metode','jenis_pbj'], null),
             'status_pekerjaan' => $pick(['status_pekerjaan','status','statusPekerjaan'], null),
 
-            // B
             'status_arsip' => $statusArsip,
 
-            // C
             'pagu_anggaran' => $toIntMoney($pick(['pagu_anggaran','pagu'], null)),
             'hps' => $toIntMoney($pick(['hps'], null)),
             'nilai_kontrak' => $toIntMoney($pick(['nilai_kontrak','kontrak','nilai'], null)),
             'nama_rekanan' => $pick(['nama_rekanan','rekanan'], null),
 
-            // E
             'dokumen_tidak_dipersyaratkan' => $docTidak,
         ];
     }
 
-    /**
-     * Upload dokumen (D) ke field json array pada model.
-     * $append=true untuk arsipUpdate (gabung dengan existing), false untuk store (replace).
-     */
     private function handleUploadDokumenToModel(Request $request, Pengadaan $pengadaan, bool $append = true): void
     {
         $fileFields = array_keys($this->dokumenFieldLabels());
